@@ -1,6 +1,8 @@
 a: 
 	gcc -Wall -gdwarf-4 -o  systemsim systemsim.c -lpthread -lrt
 
+all: a
+
 tar:
 	tar czf 21901779.tar.gz systemsim.c makefile readme.txt report.pdf -f
 

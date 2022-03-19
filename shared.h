@@ -1,3 +1,11 @@
+#include <mqueue.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/time.h>
+#include <sys/wait.h>
+#include <unistd.h>
 enum state
 {
     RUNNING,
@@ -16,10 +24,8 @@ enum burst_distribution
     EXP,
     FIX
 };
-
 enum task_type
 {
-    CPU,
     TERMINATE,
     IO1,
     IO2
@@ -29,8 +35,7 @@ enum task_type
 #define SJF "SJF"
 #define RR  "RR"
 */
-struct PCB
-{
+struct PCB {
     // pid (a positive integer)
     // thread id (of type pthread_t),
     // state,
@@ -56,17 +61,11 @@ struct PCB
     int finish_time;
     int total_execution_time;
 };
-
-
-
-struct pcb_node
-{
+struct pcb_node {
     struct PCB pcb;
     struct pcb_node *next;
 };
-
-struct pcb_queue
-{
+struct pcb_queue {
     struct pcb_node *head;
     struct pcb_node *tail;
     int count;
