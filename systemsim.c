@@ -379,6 +379,7 @@ void pcb_queue_insert(struct PCB pcb)
     }
     ready_queue.count++;
 }
+
 int pcb_queue_dequeue()
 {
     if (ready_queue.count == 0) {
@@ -387,9 +388,12 @@ int pcb_queue_dequeue()
         struct pcb_node *node = ready_queue.head;
         ready_queue.head = node->next;
         ready_queue.count--;
-        if (ready_queue.count == 0)
+        if (ready_queue.count == 0) {
             ready_queue.tail = NULL;
-        return node->pcb.pid;
+        }
+        int id = node->pcb.pid;
+        free(node);
+        return id;
     }
 }
 float frandom()
