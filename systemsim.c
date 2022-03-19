@@ -42,6 +42,7 @@ pthread_cond_t io2_cond;
 // declare methods!
 void *process(void *arg);
 void *p_sched(void *arg);
+int gen_burst_length();
 int pcb_queue_dequeue();
 void mutex_queue_add(struct PCB pcb);
 int mutex_queue_rm();
@@ -128,6 +129,7 @@ void *p_gen(void *arg)
     // TODO wait for all processes to finish
     pthread_exit(NULL);
 }
+
 void *p_sched(void *arg)
 {
     while (allp_count < ALLP) {
@@ -136,8 +138,7 @@ void *p_sched(void *arg)
         // todo check if need to schedule
         {
             toBeRun_pid = mutex_queue_rm();
-            if (
-                toBeRun_pid != -1) {
+            if (toBeRun_pid != -1) {
                 // TODO run process
                 pthread_cond_broadcast(&cpu_cond_var);
             } else {
@@ -159,19 +160,23 @@ void *process(void *arg)
             .pid = pid,
             .tid = tid,
             .state = READY,
-            .next_burst_length = 11,
-            .remaining_burst_length = 11,
-            .num_bursts = 1,
-            .time_in_ready_list = 1,
-            .IO_device1 = 1,
-            .IO_device2 = 1,
+            .next_burst_length = gen_burst_length(),
+            .remaining_burst_length = 0,
+            .num_bursts = 0,
+            .time_in_ready_list = 0,
+            .IO_device1 = 0,
+            .IO_device2 = 0,
             .start_time = 1,
             .finish_time = 1,
-            .total_execution_time = 1,
+            .total_execution_time = 0,
     };
+    if (alg = RR) {
+        my_pcb.remaining_burst_length = my_pcb.next_burst_length;
+    }
+
     enum task_type task;
+
     do {
-        // DETERMINE NEXT BURST LENGTH
         mutex_queue_add(my_pcb);
         pthread_mutex_lock(&cpu_mutex);
         while (toBeRun_pid != my_pcb.pid) {
@@ -230,9 +235,24 @@ void *process(void *arg)
                 pthread_cond_signal(&io2_cond);
                 pthread_mutex_unlock(&io2_mutex);
             }
+            my_pcb.next_burst_length = gen_burst_length();
+            if (alg = RR) {
+                my_pcb.remaining_burst_length = my_pcb.next_burst_length;
+            }
         }
     } while (task != TERMINATE);
     pthread_exit(NULL);
+}
+
+int gen_burst_length()
+{
+    if (burst_dist == UNI) {
+        return (int) (frandom() * (max_burst - min_burst)) + min_burst;
+    } else if (burst_dist == EXP) {
+        //  return (int) (frandom() * (max_burst - min_burst)) + min_burst;
+    } else if (burst_dist == FIX) {
+        return burstlen;
+    }
 }
 
 void mutex_queue_add(struct PCB pcb)

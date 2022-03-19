@@ -26,6 +26,7 @@ enum burst_distribution
 };
 enum task_type
 {
+    CPU,
     TERMINATE,
     IO1,
     IO2
@@ -57,7 +58,7 @@ struct PCB {
     int time_in_ready_list;
     int IO_device1;
     int IO_device2;
-    
+
     int start_time;
     int finish_time;
     int total_execution_time;
