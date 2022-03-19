@@ -23,10 +23,13 @@ double pg;
 int MAXP;
 int ALLP;
 int outmode;
+struct timeval sim_start_date;
 // declare global variables
 int allp_count = 0;
 struct pcb_queue ready_queue = {NULL, NULL, 0};
 int toBeRun_pid = -1;
+int io1_wait_count = 0;
+int io2_wait_count = 0;
 pthread_mutex_t pcb_queue_mutex;
 pthread_mutex_t cpu_mutex;
 pthread_mutex_t io1_mutex;
@@ -103,24 +106,21 @@ int main(int argc, char **argv)
         exit(1);
     }
 }// END main function
-struct pgen_arg {
-};
 void *p_gen(void *arg)
 {
     // create ready queue
-    int maxp_count = 0;
-    for (int i = 0; i < 10; i++) {
+    // https://moodle.bilkent.edu.tr/2021-2022-spring/mod/forum/discuss.php?d=3967
+    for (int i = 0; i < 10 && i < ALLP; i++) {
         pthread_t tid;
-        maxp_count++;
         allp_count++;
         pthread_create(&tid, NULL, process, (void *) (long) allp_count);
     }
-    while (allp_count <= ALLP) {
+    while (allp_count < ALLP) {
         pthread_t tid;
         // sleep for 5ms
         usleep(5000);
+        // -1 is for the current process/thread
         if (ready_queue.count - 1 < MAXP && frandom() < pg) {
-            maxp_count++;
             allp_count++;
             pthread_create(&tid, NULL, process, (void *) (long) allp_count);
         }
@@ -130,13 +130,14 @@ void *p_gen(void *arg)
 }
 void *p_sched(void *arg)
 {
-    while (allp_count <= ALLP) {
+    while (allp_count < ALLP) {
         pthread_mutex_lock(&cpu_mutex);
         pthread_cond_wait(&wakeup_sched, &cpu_mutex);
         // todo check if need to schedule
         {
             toBeRun_pid = mutex_queue_rm();
-            if (toBeRun_pid != -1) {
+            if (
+                toBeRun_pid != -1) {
                 // TODO run process
                 pthread_cond_broadcast(&cpu_cond_var);
             } else {
@@ -148,11 +149,12 @@ void *p_sched(void *arg)
     }
     pthread_exit(NULL);
 }
+
 void *process(void *arg)
 {
     // todo implement process
     int pid = (int) arg;
-    int tid = pthread_self();
+    pthread_t tid = pthread_self();
     struct PCB my_pcb = {
             .pid = pid,
             .tid = tid,
@@ -169,59 +171,70 @@ void *process(void *arg)
     };
     enum task_type task;
     do {
+        // DETERMINE NEXT BURST LENGTH
         mutex_queue_add(my_pcb);
+        pthread_mutex_lock(&cpu_mutex);
         while (toBeRun_pid != my_pcb.pid) {
             // todo what mutex should be here?
-            pthread_cond_wait(&cpu_cond_var, &cpu_mutex);
+            pthread_cond_wait(&wakeup_allProcs, &cpu_mutex);
         }
         // our turn to use cpu
-        pthread_mutex_lock(&cpu_mutex);
-        // todo run here
+        // todo simulate cpu usage
+        // TODO handle RR vs other cases
+
+        // sleep according to RR algorithm
+        // sleep for lesser of remaining_burst_length, Q
+        int sleep_time = my_pcb.remaining_burst_length;
+        if (alg == RR && Q < my_pcb.remaining_burst_length) {
+            sleep_time = Q;
+        }
+        usleep(sleep_time * 1000);
+        // update remaining burst length
+        my_pcb.remaining_burst_length = my_pcb.remaining_burst_length - sleep_time;
+
+        // todo update pcb variables
+
         // wake up sched, so it can do its job
         pthread_cond_signal(&wakeup_sched);
         pthread_mutex_unlock(&cpu_mutex);
-        float rn = frandom();
-        if (rn < p0) {
-            task = TERMINATE;
-        } else if (rn < p0 + p1) {
-            task = IO1;
-            pthread_mutex_lock(&io1_mutex);
-            //todo io1 here
-            pthread_cond_signal(&io1_cond);
-            pthread_mutex_unlock(&io1_mutex);
-        } else if (rn <= 1) {
-            task = IO2;
-            pthread_mutex_lock(&io2_mutex);
-            //todo io2 here
-            pthread_cond_signal(&io2_cond);
-            pthread_mutex_unlock(&io2_mutex);
+
+        // do io/term only RR is completely done with the burst or burst ended in other algorithm
+        if (my_pcb.remaining_burst_length == 0) {
+            float rn = frandom();
+            if (rn < p0) {
+                task = TERMINATE;
+            } else if (rn < p0 + p1) {
+                task = IO1;
+                pthread_mutex_lock(&io1_mutex);
+                if (io1_wait_count != 0) {
+                    io1_wait_count++;
+                    pthread_cond_wait(&io1_cond, &io1_mutex);
+                }
+                // simulate the IO run
+                usleep(T1 * 1000);// convert ms to us
+                // TODO update PCB
+                io1_wait_count--;
+                pthread_cond_signal(&io1_cond);
+                pthread_mutex_unlock(&io1_mutex);
+            } else if (rn <= 1) {
+                task = IO2;
+                pthread_mutex_lock(&io2_mutex);
+                if (io2_wait_count != 0) {
+                    io2_wait_count++;
+                    pthread_cond_wait(&io2_cond, &io2_mutex);
+                }
+                // simulate the IO run
+                usleep(T2 * 1000);// convert ms to us
+                // TODO update PCB
+                io2_wait_count--;
+                pthread_cond_signal(&io2_cond);
+                pthread_mutex_unlock(&io2_mutex);
+            }
         }
-        //        pthread_cond_wait(&cpu_cond_var, &mut);
-        //  if (state == Ready)
-        /*
-        buf_add(buf, index, i);
-        if (cpu) {
-            while (notmyturn) {
-                pthread_cond_wait(cpu);
-            }
-            usleep(PCB.sleep_time);
-            // todo update PCB
-            determine next
-        } else if (dev1) {
-            while (notmyturn) {
-                pthread_cond_wait(dev1);
-            }
-            // todo use dev1
-        } else if (dev2) {
-            while (notmyturn) {
-                pthread_cond_wait(dev2);
-            }
-            // todo use dev2
-        }
-                 */
     } while (task != TERMINATE);
     pthread_exit(NULL);
 }
+
 void mutex_queue_add(struct PCB pcb)
 {
     // lock mutex
