@@ -7,6 +7,7 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
 // declare arguments
 enum algorithm alg;
 int Q;
@@ -24,30 +25,42 @@ int MAXP;
 int ALLP;
 int outmode;
 struct timeval sim_start_date;
+
 // declare global variables
 int allp_count = 0;
 struct pcb_queue ready_queue = {NULL, NULL, 0};
-int toBeRun_pid = -1;
+int toBeRun_pid = -1; // must be safeguarded by cpu_mutex
 int io1_wait_count = 0;
 int io2_wait_count = 0;
-pthread_mutex_t pcb_queue_mutex;
-pthread_mutex_t cpu_mutex;
-pthread_mutex_t io1_mutex;
-pthread_mutex_t io2_mutex;
-pthread_cond_t cpu_cond_var;
-pthread_cond_t wakeup_sched;
-pthread_cond_t wakeup_allProcs;
-pthread_cond_t io1_cond;
-pthread_cond_t io2_cond;
-// declare methods!
-void *process(void *arg);
+int running_process_count = 0;
+
+pthread_mutex_t pcb_queue_mutex; // mutex for adding to or removing from ready_queue
+pthread_mutex_t cpu_mutex; // mutex for running on the CPU
+pthread_mutex_t io1_mutex; // mutex for running on device1
+pthread_mutex_t io2_mutex; // mutex for running on device2
+pthread_mutex_t running_process_count_mutex; // mutex for running_process_count variable
+pthread_mutex_t wakeup_sched_mutex; // mutex for waking up scheduler
+
+pthread_cond_t cpu_cond_var; // condition variable for processes waiting on CPU
+pthread_cond_t wakeup_sched; // condition variable for waking up scheduler
+pthread_cond_t wakeup_allProcs; // condition variable for waking up all processes by broadcast
+pthread_cond_t io1_cond; // condition variable for processes waiting on device1
+pthread_cond_t io2_cond; // condition variable for processes waiting on device2
+
+// declare methods
+
+void *p_gen(void *arg);
 void *p_sched(void *arg);
+void *process(void *arg);
+
 int gen_burst_length();
 int pcb_queue_dequeue();
 void mutex_queue_add(struct PCB pcb);
 int mutex_queue_rm();
 void pcb_queue_insert(struct PCB pcb);
 float frandom();
+
+
 int main(int argc, char **argv)
 {
     // READ THE arguments
@@ -75,6 +88,7 @@ int main(int argc, char **argv)
     T1 = atoi(argv[3]);
     T2 = atoi(argv[4]);
     char *tmp_burst_dist = argv[5];
+
     if (strcmp(tmp_burst_dist, "uniform") == 0) {
         burst_dist = UNI;
     } else if (strcmp(tmp_burst_dist, "exponential") == 0) {
@@ -85,6 +99,7 @@ int main(int argc, char **argv)
         printf("Invalid burst distribution %s\n", tmp_burst_dist);
         exit(1);
     }
+
     burstlen = atoi(argv[6]);
     min_burst = atoi(argv[7]);
     max_burst = atoi(argv[8]);
@@ -95,7 +110,7 @@ int main(int argc, char **argv)
     MAXP = atoi(argv[13]);
     ALLP = atoi(argv[14]);
     outmode = atoi(argv[15]);
-    // todo implement constraints
+
     // check T1 more than 30 less than 100
     if (T1 < 30 || T1 > 100) {
         printf("T1 must be than 30 less than 100\n");
@@ -106,47 +121,91 @@ int main(int argc, char **argv)
         printf("T2 must be at least 100 and at most 300\n");
         exit(1);
     }
+    // ps. We assume inputs are correct! https://moodle.bilkent.edu.tr/2021-2022-spring/mod/forum/discuss.php?d=4265
+
+    // initialize mutexes
+    pthread_mutex_init(&pcb_queue_mutex, NULL);
+    pthread_mutex_init(&cpu_mutex, NULL);
+    pthread_mutex_init(&io1_mutex, NULL);
+    pthread_mutex_init(&io2_mutex, NULL);
+    pthread_mutex_init(&running_process_count_mutex, NULL);
+    pthread_mutex_init(&wakeup_sched_mutex, NULL);
+
+    // initialize condition variables
+    pthread_cond_init(&cpu_cond_var, NULL);
+    pthread_cond_init(&wakeup_sched, NULL);
+    pthread_cond_init(&wakeup_allProcs, NULL);
+    pthread_cond_init(&io1_cond, NULL);
+    pthread_cond_init(&io2_cond, NULL);
+
+
+
+
 }// END main function
+
 void *p_gen(void *arg)
 {
     // create ready queue
+    // create at most as much as necessary and as much as allowed
     // https://moodle.bilkent.edu.tr/2021-2022-spring/mod/forum/discuss.php?d=3967
-    for (int i = 0; i < 10 && i < ALLP; i++) {
+    
+    // get lock of running process count
+    pthread_mutex_lock(&running_process_count_mutex);
+    for (int i = 0; i < 10 && i < MAXP; i++) {
         pthread_t tid;
         allp_count++;
+        running_process_count++;
+        // allp_count is the so-called pid of the processes
         pthread_create(&tid, NULL, process, (void *) (long) allp_count);
     }
+    // release lock of running process count
+    pthread_mutex_unlock(&running_process_count_mutex);
+
     while (allp_count < ALLP) {
         pthread_t tid;
         // sleep for 5ms
         usleep(5000);
-        // -1 is for the current process/thread
-        if (ready_queue.count - 1 < MAXP && frandom() < pg) {
+        
+        pthread_mutex_lock(&running_process_count_mutex);
+        if (running_process_count_mutex < MAXP && frandom() < pg) {
             allp_count++;
             pthread_create(&tid, NULL, process, (void *) (long) allp_count);
+            running_process_count++;
         }
+        pthread_mutex_unlock(&running_process_count_mutex);
+        
     }
-    // TODO wait for all processes to finish
+
+    // TODO replace with thread_join   
+    // It is guaranteed that all processes are created and included in running_process_count
+    // So we can safely assume that all processes are finished if the running_process_count is 0
+    while(running_process_count > 0 ) {
+        usleep(1000);
+    }
+    // nevertheless, sleep for 5 ms
+    usleep(5000);
+
     pthread_exit(NULL);
 }
 
 void *p_sched(void *arg)
 {
-    while (allp_count < ALLP) {
-        pthread_mutex_lock(&cpu_mutex);
-        pthread_cond_wait(&wakeup_sched, &cpu_mutex);
-        // todo check if need to schedule
-        {
+    while (allp_count < ALLP &&  running_process_count > 0) {
+        pthread_mutex_lock(&wakeup_sched_mutex);
+        pthread_cond_wait(&wakeup_sched, &wakeup_sched_mutex);
+
+        // try lock cpu_mutex i.e. check if need to schedule
+        if( pthread_mutex_trylock(&cpu_mutex) ) {
             toBeRun_pid = mutex_queue_rm();
             if (toBeRun_pid != -1) {
-                // TODO run process
-                pthread_cond_broadcast(&cpu_cond_var);
-            } else {
-                // empty queue what to do?
-                // nothing?
-            }
+                pthread_cond_broadcast(&wakeup_allProcs); 
+            } 
+            // else  empty queue what to do?
+            // do  nothing
+            
+            pthread_mutex_unlock(&cpu_mutex);
         }
-        pthread_mutex_unlock(&cpu_mutex);
+        pthread_mutex_unlock(&wakeup_sched_mutex);
     }
     pthread_exit(NULL);
 }
@@ -170,7 +229,7 @@ void *process(void *arg)
             .finish_time = 1,
             .total_execution_time = 0,
     };
-    if (alg = RR) {
+    if (alg == RR) {
         my_pcb.remaining_burst_length = my_pcb.next_burst_length;
     }
 
@@ -178,9 +237,13 @@ void *process(void *arg)
 
     do {
         mutex_queue_add(my_pcb);
+        // signal to the scheduler that a process is added to the ready queue
+        pthread_mutex_lock(&wakeup_sched_mutex);
+        pthread_cond_signal(&wakeup_sched);
+        pthread_mutex_unlock(&wakeup_sched_mutex);
+
         pthread_mutex_lock(&cpu_mutex);
         while (toBeRun_pid != my_pcb.pid) {
-            // todo what mutex should be here?
             pthread_cond_wait(&wakeup_allProcs, &cpu_mutex);
         }
         // our turn to use cpu
@@ -198,10 +261,14 @@ void *process(void *arg)
         my_pcb.remaining_burst_length = my_pcb.remaining_burst_length - sleep_time;
 
         // todo update pcb variables
+        
+        pthread_mutex_unlock(&cpu_mutex);
 
         // wake up sched, so it can do its job
+        pthread_mutex_lock(&wakeup_sched_mutex);
         pthread_cond_signal(&wakeup_sched);
-        pthread_mutex_unlock(&cpu_mutex);
+        pthread_mutex_unlock(&wakeup_sched_mutex);
+
 
         // do io/term only RR is completely done with the burst or burst ended in other algorithm
         if (my_pcb.remaining_burst_length == 0) {
@@ -236,11 +303,16 @@ void *process(void *arg)
                 pthread_mutex_unlock(&io2_mutex);
             }
             my_pcb.next_burst_length = gen_burst_length();
-            if (alg = RR) {
+            if (alg == RR) {
                 my_pcb.remaining_burst_length = my_pcb.next_burst_length;
             }
         }
     } while (task != TERMINATE);
+
+    pthread_mutex_lock(&running_process_count_mutex);
+    running_process_count--;
+    pthread_mutex_unlock(&running_process_count_mutex);
+
     pthread_exit(NULL);
 }
 
@@ -264,6 +336,7 @@ void mutex_queue_add(struct PCB pcb)
     // unlock mutex
     pthread_mutex_unlock(&pcb_queue_mutex);
 };
+
 int mutex_queue_rm()
 {
     // lock mutex
@@ -274,6 +347,7 @@ int mutex_queue_rm()
     pthread_mutex_unlock(&pcb_queue_mutex);
     return pid;
 };
+
 void pcb_queue_insert(struct PCB pcb)
 {
     enum algorithm ins_alg = alg;
