@@ -399,10 +399,11 @@ void *process(void *arg)
             else if (rn < p0 + p1) {
                 my_pcb.state = WAITING;
                 if(outmode == 3)
-                    printf("%ld Process %d shall be put to waiting queue of DEVICE1.\n", time_elapsed, pid);
+                    printf("%ld Process %d shall be put to waiting queue of DEVICE1, wait: %d.\n", time_elapsed, pid,io1_wait_count);
                 // todo rethink about the lock & cond mechanism
                 pthread_mutex_lock(&io1_mutex);
-                if (io1_wait_count != 0) {
+                io1_wait_count++;
+                while (io1_wait_count != 1) {
                     io1_wait_count++;
                     pthread_cond_wait(&io1_cond, &io1_mutex);
                 }
@@ -425,11 +426,11 @@ void *process(void *arg)
                 pthread_mutex_unlock(&io1_mutex);
             } else if (rn <= 1) {
                 if(outmode == 3)
-                    printf("%ld Process %d shall be put to waiting queue of DEVICE2.\n", time_elapsed, pid);
+                    printf("%ld Process %d shall be put to waiting queue of DEVICE2, wait: %d.\n", time_elapsed, pid, io2_wait_count);
                 my_pcb.state = WAITING;
                 pthread_mutex_lock(&io2_mutex);
-                if (io2_wait_count != 0) {
-                    io2_wait_count++;
+                io2_wait_count++;
+                while (io2_wait_count !=1) {
                     pthread_cond_wait(&io2_cond, &io2_mutex);
                 }
                 gettimeofday(&current_time, NULL);

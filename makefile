@@ -14,7 +14,7 @@ run:a
 	
 
 val: a
-	valgrind --leak-check=full --show-leak-kinds=all --leak-resolution=high --track-origins=yes --vgdb=yes ./systemsim FCFS INF 50 100 fixed 20 10 100 0.8 0.1 0.1 0.1 3 7 0
+	valgrind --leak-check=full --show-leak-kinds=all --leak-resolution=high --track-origins=yes --vgdb=yes ./systemsim FCFS INF 5 10 fixed 100 10 100 0.5 0.25 0.25 0.5 3 5 3
 	
 clean:
 	rm -fr *~ systemsim 
