@@ -377,6 +377,7 @@ void *process(void *arg)
         while (toBeRun_pid != my_pcb.pid) {
             pthread_cond_wait(&wakeup_allProcs, &cpu_mutex);
         }
+        toBeRun_pid = -1;
 
         // our turn to use cpu
         // state is RUNNING
