@@ -154,8 +154,11 @@ int main(int argc, char **argv)
     pthread_t sched_thread;
     pthread_create(&sched_thread, NULL, p_sched, NULL);
 
+    printf("SİZE %d\n",sizeof(struct PCB));
 
-
+    /* thread join */
+    pthread_join(gen_thread, NULL);
+    pthread_join(sched_thread, NULL);
     // destroy them (mutexes) all!
     pthread_mutex_destroy(&pcb_queue_mutex);
     pthread_mutex_destroy(&cpu_mutex);
@@ -172,12 +175,16 @@ int main(int argc, char **argv)
     pthread_cond_destroy(&wakeup_allProcs);
     pthread_cond_destroy(&io1_cond);
     pthread_cond_destroy(&io2_cond);
+    
 
     return 0;
 }// END main function
 
 void *p_gen(void *arg)
 {
+    if(outmode == 0)
+        printf("Generator thread started\n");
+
     // create ready queue
     // create at most as much as necessary and as much as allowed
     // https://moodle.bilkent.edu.tr/2021-2022-spring/mod/forum/discuss.php?d=3967
@@ -206,11 +213,17 @@ void *p_gen(void *arg)
         pthread_mutex_lock(&running_process_count_mutex);
         if (running_process_count < MAXP && frandom() < pg) {
             allp_count++;
+            if(outmode == 0)
+                printf("Generator: %d process will be created\n", allp_count);
             pthread_create(&tid, NULL, process, (void *) (long) allp_count);
+            if(outmode == 0)
+                printf("Generator: %d process created\n", allp_count);
             running_process_count++;
         }
         pthread_mutex_unlock(&running_process_count_mutex);
     }
+    if(outmode == 0)
+        printf("Generator thread exited allp_count\n");
 
     // TODO replace with thread_join
     // It is guaranteed that all processes are created and included in running_process_count
@@ -221,25 +234,32 @@ void *p_gen(void *arg)
     // nevertheless, sleep for 5 ms
     usleep(5000);
 
+    if(outmode == 0)
+        printf("Generator thread finished\n");
     pthread_exit(NULL);
 }
 
 void *p_sched(void *arg)
 {    
+    if(outmode == 0)
+        printf("SCHEDULER STARTED\n");
     pthread_mutex_lock(&wakeup_sched_mutex);
     pthread_cond_wait(&wakeup_sched, &wakeup_sched_mutex);
     pthread_mutex_unlock(&wakeup_sched_mutex);
 
-    while ((allp_count < ALLP && running_process_count > 0) ) {
+    while ((allp_count < ALLP || running_process_count > 0) ) {
         pthread_mutex_lock(&wakeup_sched_mutex);
         pthread_cond_wait(&wakeup_sched, &wakeup_sched_mutex);
 
         // try lock cpu_mutex i.e. check if need to schedule
         if (pthread_mutex_trylock(&cpu_mutex)) {
+
             toBeRun_pid = mutex_queue_rm();
             if (toBeRun_pid != -1) {
                 pthread_cond_broadcast(&wakeup_allProcs);
             }
+            if(outmode == 0)
+                printf("SCHEDULER: %d process will be scheduled\n", toBeRun_pid);
             // else  empty queue what to do?
             // do  nothing
 
@@ -247,11 +267,16 @@ void *p_sched(void *arg)
         }
         pthread_mutex_unlock(&wakeup_sched_mutex);
     }
+    if(outmode == 0)
+        printf("SCHEDULER FINISHED\n");
     pthread_exit(NULL);
 }
 
 void *process(void *arg)
 {
+    if(outmode == 0)
+        printf("Process %d started\n", (int) arg);
+
     // todo implement process
     int pid = (int) arg;
     pthread_t tid = pthread_self();
@@ -315,7 +340,12 @@ void *process(void *arg)
             float rn = frandom();
             if (rn < p0) {
                 my_pcb.state = TERMINATED;
-            } else if (rn < p0 + p1) {
+                if(outmode == 0)
+                    printf("Process %d terminated\n", my_pcb.pid);
+            } 
+            else if (rn < p0 + p1) {
+                if(outmode == 0)
+                    printf("Process %d is blocked in IO1\n", my_pcb.pid);
                 my_pcb.state = WAITING;
                 // todo rethink about the lock & cond mechanism
                 pthread_mutex_lock(&io1_mutex);
@@ -346,6 +376,8 @@ void *process(void *arg)
             if (my_pcb.state != TERMINATED) {
                 my_pcb.next_burst_length = gen_burst_length();
                 my_pcb.remaining_burst_length = my_pcb.next_burst_length;
+                if(outmode == 0) 
+                    printf("Process %d isnot terminated, burslength %d ms\n", my_pcb.pid, my_pcb.next_burst_length);
             }
         }
     } while (my_pcb.state != TERMINATED);
@@ -353,6 +385,9 @@ void *process(void *arg)
     pthread_mutex_lock(&running_process_count_mutex);
     running_process_count--;
     pthread_mutex_unlock(&running_process_count_mutex);
+
+    if(outmode == 0)
+        printf("Process %d finished\n", pid);
     pthread_exit(NULL);
 }
 
