@@ -10,7 +10,8 @@ enum state
 {
     RUNNING,
     READY,
-    WAITING
+    WAITING,
+    TERMINATED
 };
 enum algorithm
 {
@@ -24,13 +25,7 @@ enum burst_distribution
     EXP,
     FIX
 };
-enum task_type
-{
-    CPU,
-    TERMINATE,
-    IO1,
-    IO2
-};
+
 /*
 #define FCFS "FCFS"
 #define SJF "SJF"
