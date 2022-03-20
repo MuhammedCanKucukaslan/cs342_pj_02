@@ -1,5 +1,5 @@
 a: 
-	gcc -Wall -gdwarf-4 -o  systemsim systemsim.c -lpthread -lrt
+	gcc -Wall -gdwarf-4 -o  systemsim systemsim.c -lpthread -lrt -lm
 
 all: a
 

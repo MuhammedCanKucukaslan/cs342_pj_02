@@ -7,6 +7,7 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <math.h>
 
 // declare arguments
 enum algorithm alg;
@@ -154,7 +155,7 @@ int main(int argc, char **argv)
     pthread_t sched_thread;
     pthread_create(&sched_thread, NULL, p_sched, NULL);
 
-    printf("SİZE %d\n",sizeof(struct PCB));
+    printf("Size of PCB  %ld\n",sizeof(struct PCB));
 
     /* thread join */
     pthread_join(gen_thread, NULL);
@@ -393,13 +394,31 @@ void *process(void *arg)
 
 int gen_burst_length()
 {
+    float rn = frandom();
     if (burst_dist == UNI) {
-        return (int) (frandom() * (max_burst - min_burst)) + min_burst;
+        return (int) (rn * (max_burst - min_burst)) + min_burst;
     } else if (burst_dist == EXP) {
-        //  return (int) (frandom() * (max_burst - min_burst)) + min_burst;
-    } else if (burst_dist == FIX) {
+        /*
+            If selection will be according to exponential distribution, an 
+            exponentially distributed random value will be selected. The l parameter of 
+            the exponential distribution will depend on the <burstlen> parameter value 
+            (in ms) entered at command line. No matter which way is used, the selected 
+            next CPU burst length value should be in range [<min-burst>, <max-burst>]
+        */
+        // recall that cdf p(x) = 1 - exp(-lambda * x) which generates a real number from interval [0,lambda]
+        // first we need to generate a real number p from interval [0,1] whose x value we want to know
+        // then we can use the inverse function of the exponential distribution to get the x value
+        // lambda = burstlen
+        int x = -log(1-rn)/burstlen; // if rn = 0, x = 0, if rn = 1, x = inf
+        // now we rescale the x value to the interval [min_burst, max_burst]
+        return (int) (x * (max_burst - min_burst)) + min_burst;
+        // so we need to convert it to [min_burst, max_burst]
+        //float lambda = (float) (max_burst - min_burst) / (float) (1 - exp(-1 * lambda));
+    } else // if (burst_dist == FIX) 
+    {
         return burstlen;
     }
+
 }
 
 void mutex_queue_add(struct PCB pcb)
