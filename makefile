@@ -9,7 +9,8 @@ tar:
 run:a
 	#     // <ALG> <Q> <T1> <T2> <burst-dist> <burstlen> <min-burst> <max-burst> <p0> <p1> <p2> <pg> <MAXP> <ALLP> <OUTMODE>
 
-	./systemsim FCFS INF 50 100 fixed 20 10 100 0.8 0.1 0.1 0.1 5 10 0 
+	./systemsim FCFS INF 5 10 fixed 100 10 100 0.5 0.25 0.25 0.5 3 5 3
+	#./systemsim FCFS INF 5 10 fixed 100 10 100 0.8 0.1 0.1 0.1 5 10 0 
 	
 
 val: a
