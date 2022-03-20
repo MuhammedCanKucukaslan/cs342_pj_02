@@ -1,0 +1,83 @@
+./systemsim FCFS INF 5 10 fixed 100 10 100 0.3 0.3 0.4 0.5 3 5 3
+Algorithm: FCFS
+0 Scheduler thread started
+Generator thread started.
+0 process 1 started
+0 process 2 started
+pgen generated first min{10, 3} threads, running_process_count=3.
+0 process 3 started
+1 Process 1 added to ready queue.
+1 Process 2 added to ready queue.
+1 Scheduler: process 1 removed from queue and will be scheduled
+1 Scheduler: allp_count: 3, running_process_count: 3
+1 Process 3 added to ready queue.
+1 1 RUNNING, burstlength = 100, sleep_time: 100
+102 Process 1 finished its burst.
+102 Process 1 shall be put to waiting queue of DEVICE2, wait: 0.
+102 1 USING DEVICE2, T2 = 10
+102 Scheduler: process 2 removed from queue and will be scheduled
+102 Scheduler: allp_count: 3, running_process_count: 3
+103 2 RUNNING, burstlength = 100, sleep_time: 100
+113 Process 1 is not terminated, burslength 100 ms
+113 Process 1 added to ready queue.
+203 Process 2 finished its burst.
+204 Process 2 shall be terminated.
+204 Process 2 finished, running_process_count 2
+204 Scheduler: process 3 removed from queue and will be scheduled
+204 Scheduler: allp_count: 3, running_process_count: 2
+204 3 RUNNING, burstlength = 100, sleep_time: 100
+Generator: process 4  will be created
+Generator: process 4 created, running_process_count: 3 
+209 process 4 started
+209 Process 4 added to ready queue.
+304 Process 3 finished its burst.
+305 Process 3 shall be terminated.
+305 Process 3 finished, running_process_count 2
+305 Scheduler: process 1 removed from queue and will be scheduled
+305 Scheduler: allp_count: 4, running_process_count: 2
+307 1 RUNNING, burstlength = 100, sleep_time: 100
+Generator: process 5  will be created
+Generator: process 5 created, running_process_count: 3 
+316 process 5 started
+316 Process 5 added to ready queue.
+407 Process 1 finished its burst.
+407 Process 1 shall be put to waiting queue of DEVICE1, wait: 0.
+407 1 USING DEVICE1, T1 = 5
+408 Scheduler: process 4 removed from queue and will be scheduled
+408 Scheduler: allp_count: 5, running_process_count: 3
+408 4 RUNNING, burstlength = 100, sleep_time: 100
+413 Process 1 is not terminated, burslength 100 ms
+413 Process 1 added to ready queue.
+509 Process 4 finished its burst.
+509 Process 4 shall be put to waiting queue of DEVICE2, wait: 0.
+509 4 USING DEVICE2, T2 = 10
+509 Scheduler: process 5 removed from queue and will be scheduled
+509 Scheduler: allp_count: 5, running_process_count: 3
+510 5 RUNNING, burstlength = 100, sleep_time: 100
+520 Process 4 is not terminated, burslength 100 ms
+520 Process 4 added to ready queue.
+610 Process 5 finished its burst.
+610 Process 5 shall be put to waiting queue of DEVICE2, wait: 0.
+610 5 USING DEVICE2, T2 = 10
+620 Process 5 is not terminated, burslength 100 ms
+621 Process 5 added to ready queue.
+621 5 RUNNING, burstlength = 100, sleep_time: 100
+721 Process 5 finished its burst.
+721 Process 5 shall be terminated.
+721 Process 5 finished, running_process_count 2
+721 Scheduler: process 1 removed from queue and will be scheduled
+721 Scheduler: allp_count: 5, running_process_count: 2
+721 1 RUNNING, burstlength = 100, sleep_time: 100
+822 Process 1 finished its burst.
+822 Process 1 shall be put to waiting queue of DEVICE2, wait: 0.
+822 1 USING DEVICE2, T2 = 10
+822 Scheduler: process 4 removed from queue and will be scheduled
+822 Scheduler: allp_count: 5, running_process_count: 2
+822 4 RUNNING, burstlength = 100, sleep_time: 100
+832 Process 1 is not terminated, burslength 100 ms
+832 Process 1 added to ready queue.
+923 Process 4 finished its burst.
+923 Process 4 shall be terminated.
+923 Process 4 finished, running_process_count 1
+923 Scheduler: process 5 removed from queue and will be scheduled
+923 Scheduler: allp_count: 5, running_process_count: 

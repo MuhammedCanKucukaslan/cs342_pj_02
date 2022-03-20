@@ -35,6 +35,7 @@ int toBeRun_pid = -1;// must be safeguarded by cpu_mutex
 int io1_wait_count = 0;
 int io2_wait_count = 0;
 int running_process_count = 0;
+int scheduler_started = -1;
 
 pthread_mutex_t pcb_queue_mutex;            // mutex for adding to or removing from ready_queue
 pthread_mutex_t cpu_mutex;                  // mutex for running on the CPU
@@ -44,13 +45,15 @@ pthread_mutex_t running_process_count_mutex;// mutex for running_process_count v
 pthread_mutex_t wakeup_sched_mutex;         // mutex for waking up scheduler
 pthread_mutex_t io1_wait_count_mutex;       // mutex for io1_wait_count variable
 pthread_mutex_t io2_wait_count_mutex;       // mutex for io2_wait_count variable
-
+pthread_mutex_t create_pgen_mutex; // mutex for creating pgen and condition variable create_pgen_cond 
 
 pthread_cond_t cpu_cond_var;   // condition variable for processes waiting on CPU
 pthread_cond_t wakeup_sched;   // condition variable for waking up scheduler
 pthread_cond_t wakeup_allProcs;// condition variable for waking up all processes by broadcast
 pthread_cond_t io1_cond;       // condition variable for processes waiting on device1
 pthread_cond_t io2_cond;       // condition variable for processes waiting on device2
+pthread_cond_t running_process_count_cond; // the scheduler thread will wait for this condition variable to initiate scheduling
+pthread_cond_t create_pgen_cond; // the main thread will wait for this condition variable to create pgen,
 
 // declare methods
 
@@ -138,22 +141,37 @@ int main(int argc, char **argv)
     pthread_cond_init(&wakeup_allProcs, NULL);
     pthread_cond_init(&io1_cond, NULL);
     pthread_cond_init(&io2_cond, NULL);
+    pthread_cond_init(&running_process_count_cond, NULL);
 
 
-
-    // initialize generator thread
-    pthread_t gen_thread;
-    pthread_create(&gen_thread, NULL, p_gen, NULL);
-
+    
     // initialize scheduler thread
     pthread_t sched_thread;
     pthread_create(&sched_thread, NULL, p_sched, NULL);
 
-    printf("Size of PCB  %ld\n",sizeof(struct PCB));
+    // wait for scheduler thread to start
+    
+    // the program will be initiated succesfully regardless of whether the following code
+    // executed before the sched_thread or after!
+    // usleep(100*1000);
+    pthread_mutex_lock(&create_pgen_mutex);
+    while(scheduler_started < 0) {
+        pthread_cond_wait(&create_pgen_cond, &create_pgen_mutex);
+    }
+    
+    // initialize generator thread
+    pthread_t gen_thread;
+    pthread_create(&gen_thread, NULL, p_gen, NULL);
+    // unlock
+    pthread_mutex_unlock(&create_pgen_mutex);
+
 
     /* thread join */
     pthread_join(gen_thread, NULL);
     pthread_join(sched_thread, NULL);
+
+
+
     // destroy them (mutexes) all!
     pthread_mutex_destroy(&pcb_queue_mutex);
     pthread_mutex_destroy(&cpu_mutex);
@@ -170,6 +188,7 @@ int main(int argc, char **argv)
     pthread_cond_destroy(&wakeup_allProcs);
     pthread_cond_destroy(&io1_cond);
     pthread_cond_destroy(&io2_cond);
+    pthread_cond_destroy(&running_process_count_cond);    
 
     return 0;
 }// END main function
@@ -199,9 +218,10 @@ void *p_gen(void *arg)
     if(outmode == 3)
         printf("pgen generated first min{10, %d} threads, running_process_count=%d.\n", MAXP, running_process_count);
 
-    pthread_mutex_lock(&wakeup_sched_mutex);
-    pthread_cond_signal(&wakeup_sched);
-    pthread_mutex_unlock(&wakeup_sched_mutex);
+    // signal to p_sched running_process_count is non zero
+    pthread_mutex_lock(&running_process_count_mutex);
+    pthread_cond_signal(&running_process_count_cond);
+    pthread_mutex_unlock(&running_process_count_mutex);
 
     while (allp_count < ALLP) {
         pthread_t tid;
@@ -242,18 +262,35 @@ void *p_gen(void *arg)
 }
 
 void *p_sched(void *arg)
-{
-    if(outmode == 3)
-        printf("Scheduler thread started\n");
-    // get time of day and set it to the sim start time
+{ 
+    //usleep(100*1000);
     gettimeofday(&sim_start_date, NULL);
     struct timeval current_time;
     long elapsed_time;
-    /*
-    pthread_mutex_lock(&wakeup_sched_mutex);
-    pthread_cond_wait(&wakeup_sched, &wakeup_sched_mutex);
-    pthread_mutex_unlock(&wakeup_sched_mutex);
-    */
+    if(outmode == 3)
+        printf("0 Scheduler thread started\n");
+    // get time of day and set it to the sim start time
+    scheduler_started = 1;
+    
+    // obtain lock of queue and signal main thread to start p_gen
+    // then release the queue once we know that running_process_count is not 0 
+    pthread_mutex_lock(&pcb_queue_mutex);
+    pthread_cond_signal(&create_pgen_cond);
+
+
+    // wait for generator to create at least one process
+    pthread_mutex_lock(&running_process_count_mutex);
+    // It is guaranteed for allp_count to be positive but better to be safe than stay awake 4 A.M.
+    while(running_process_count < 1 || allp_count < 1) {
+        pthread_cond_signal(&create_pgen_cond);
+        pthread_cond_wait(&running_process_count_cond, &running_process_count_mutex);
+    }
+    pthread_mutex_unlock(&running_process_count_mutex);
+    
+    // release queue so that process can add themselves to the queue
+    // since running_process_count
+    pthread_mutex_unlock(&pcb_queue_mutex);
+
     while ((allp_count < ALLP || running_process_count > 0) ) {
         pthread_mutex_lock(&wakeup_sched_mutex);
         pthread_cond_wait(&wakeup_sched, &wakeup_sched_mutex);
@@ -269,7 +306,7 @@ void *p_sched(void *arg)
             elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 + (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
             if(outmode == 3) {
                 if(toBeRun_pid != -1)
-                    printf("%ld Scheduler: process %d will be scheduled\n",elapsed_time, toBeRun_pid);
+                    printf("%ld Scheduler: process %d removed from queue and will be scheduled\n",elapsed_time, toBeRun_pid);
                 else {
                     printf("%ld Scheduler: no process to be scheduled\n", elapsed_time);   
                 }
@@ -340,7 +377,7 @@ void *process(void *arg)
         while (toBeRun_pid != my_pcb.pid) {
             pthread_cond_wait(&wakeup_allProcs, &cpu_mutex);
         }
-
+        toBeRun_pid = -1;
 
         // our turn to use cpu
         // state is RUNNING
@@ -453,8 +490,10 @@ void *process(void *arg)
             if (my_pcb.state != TERMINATED) {
                 my_pcb.next_burst_length = gen_burst_length();
                 my_pcb.remaining_burst_length = my_pcb.next_burst_length;
-                if(outmode == 0)
-                    printf("Process %d isnot terminated, burslength %d ms\n", my_pcb.pid, my_pcb.next_burst_length);
+                gettimeofday(&current_time, NULL);
+                elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 + (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
+                if(outmode == 3)
+                    printf("%ld Process %d is not terminated, burslength %d ms\n", elapsed_time, my_pcb.pid, my_pcb.next_burst_length);
             }
         }
     } while (my_pcb.state != TERMINATED);
@@ -463,9 +502,11 @@ void *process(void *arg)
     running_process_count--;
     pthread_mutex_unlock(&running_process_count_mutex);
 
-
-    if(outmode == 2 || outmode == 3)
-        printf("Process %d finished, running_process_count %d\n", pid, running_process_count);
+    gettimeofday(&current_time, NULL);
+    elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 + (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
+                
+    if(outmode == 3)
+        printf("%ld Process %d finished, running_process_count %d\n", elapsed_time, pid, running_process_count);
     pthread_exit(NULL);
 }
 
