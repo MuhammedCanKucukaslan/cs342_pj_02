@@ -171,7 +171,6 @@ int main(int argc, char **argv)
     pthread_cond_destroy(&io1_cond);
     pthread_cond_destroy(&io2_cond);
 
-
     return 0;
 }// END main function
 
@@ -298,8 +297,10 @@ void *process(void *arg)
     struct timeval current_time;
     long elapsed_time ;
     
-    if(outmode == 0)
-        printf("Process %d started\n", (int) arg);
+    gettimeofday(&current_time, NULL);
+    elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 + (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
+    if( outmode == 3)
+        printf("%ld process %d started\n", elapsed_time, (long) arg);
     // todo implement process
     int pid = (int) arg;
     pthread_t tid = pthread_self();
@@ -314,7 +315,7 @@ void *process(void *arg)
             .time_in_ready_list = 0,
             .IO_device1 = 0,
             .IO_device2 = 0,
-            .start_time = 1,// todo
+            .start_time = elapsed_time,// todo
             .finish_time = 1,
             .total_execution_time = 0,
     };
@@ -355,15 +356,15 @@ void *process(void *arg)
 
         // find time elapsed since sim_start_date in ms
         gettimeofday(&current_time, NULL);
-        long time_elapsed = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 + (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
+        elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 + (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
         if(outmode == 2 )
         {
             // . If it is 2, the running thread will print out the current time (in ms
             // from the start of the simulation), its pid and its state to the screen.
-            printf("%ld %d %s\n", time_elapsed, my_pcb.pid, getStateName( my_pcb.state));
+            printf("%ld %d %s\n", elapsed_time, my_pcb.pid, getStateName( my_pcb.state));
         }
         else if( outmode == 3) {
-            printf("%ld %d %s, burstlength = %d, sleep_time: %d\n", time_elapsed, my_pcb.pid, getStateName( my_pcb.state), my_pcb.remaining_burst_length, sleep_time);
+            printf("%ld %d %s, burstlength = %d, sleep_time: %d\n", elapsed_time, my_pcb.pid, getStateName( my_pcb.state), my_pcb.remaining_burst_length, sleep_time);
         }
         usleep(sleep_time * 1000);
         // update remaining burst length
@@ -375,7 +376,7 @@ void *process(void *arg)
         gettimeofday(&current_time, NULL);
         elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 + (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
         if(outmode == 3)
-            printf("%ld Process %d finished its burst.\n", time_elapsed, pid);
+            printf("%ld Process %d finished its burst.\n", elapsed_time, pid);
         pthread_mutex_unlock(&cpu_mutex);
 
         // do io/term only RR is completely done with the burst or burst ended in other algorithm
@@ -389,17 +390,17 @@ void *process(void *arg)
 
             // get elapse
             gettimeofday(&current_time, NULL);
-            time_elapsed = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 + (current_time.tv_usec - sim_start_date.tv_usec) / 1000;  
+            elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 + (current_time.tv_usec - sim_start_date.tv_usec) / 1000;  
                 
             if (rn < p0) {
                 my_pcb.state = TERMINATED;
                 if(outmode == 3)
-                    printf("%ld Process %d shall be terminated.\n", time_elapsed, pid);
+                    printf("%ld Process %d shall be terminated.\n", elapsed_time, pid);
             }
             else if (rn < p0 + p1) {
                 my_pcb.state = WAITING;
                 if(outmode == 3)
-                    printf("%ld Process %d shall be put to waiting queue of DEVICE1, wait: %d.\n", time_elapsed, pid,io1_wait_count);
+                    printf("%ld Process %d shall be put to waiting queue of DEVICE1, wait: %d.\n", elapsed_time, pid,io1_wait_count);
                 // todo rethink about the lock & cond mechanism
                 pthread_mutex_lock(&io1_mutex);
                 io1_wait_count++;
@@ -409,13 +410,13 @@ void *process(void *arg)
                 }
 
                 gettimeofday(&current_time, NULL);
-                long time_elapsed = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 + (current_time.tv_usec - sim_start_date.tv_usec) / 1000;  
+                elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 + (current_time.tv_usec - sim_start_date.tv_usec) / 1000;  
                 if(outmode == 2) {
                     //  print out the current time (ms), its pid, and the device that it is using.
-                    printf("%ld %d USING DEVICE1\n", time_elapsed, my_pcb.pid);
+                    printf("%ld %d USING DEVICE1\n", elapsed_time, my_pcb.pid);
                 }
                 else if(outmode == 3) {
-                    printf("%ld %d USING DEVICE1, T1 = %d\n", time_elapsed, my_pcb.pid, T1);
+                    printf("%ld %d USING DEVICE1, T1 = %d\n", elapsed_time, my_pcb.pid, T1);
                 }
 
                 // simulate the IO run
@@ -426,7 +427,7 @@ void *process(void *arg)
                 pthread_mutex_unlock(&io1_mutex);
             } else if (rn <= 1) {
                 if(outmode == 3)
-                    printf("%ld Process %d shall be put to waiting queue of DEVICE2, wait: %d.\n", time_elapsed, pid, io2_wait_count);
+                    printf("%ld Process %d shall be put to waiting queue of DEVICE2, wait: %d.\n", elapsed_time, pid, io2_wait_count);
                 my_pcb.state = WAITING;
                 pthread_mutex_lock(&io2_mutex);
                 io2_wait_count++;
@@ -434,13 +435,13 @@ void *process(void *arg)
                     pthread_cond_wait(&io2_cond, &io2_mutex);
                 }
                 gettimeofday(&current_time, NULL);
-                long time_elapsed = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 + (current_time.tv_usec - sim_start_date.tv_usec) / 1000;    
+                elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 + (current_time.tv_usec - sim_start_date.tv_usec) / 1000;    
                 if(outmode == 2 ) {
                     //  print out the current time (ms), its pid, and the device that it is using.
-                    printf("%ld %d USING DEVICE2\n", time_elapsed, my_pcb.pid);
+                    printf("%ld %d USING DEVICE2\n", elapsed_time, my_pcb.pid);
                 }
                 else if(outmode == 3) {
-                    printf("%ld %d USING DEVICE2, T2 = %d\n", time_elapsed, my_pcb.pid, T2);
+                    printf("%ld %d USING DEVICE2, T2 = %d\n", elapsed_time, my_pcb.pid, T2);
                 }
                 // simulate the IO run
                 usleep(T2 * 1000);// convert ms to us

@@ -32,31 +32,20 @@ enum burst_distribution
 #define RR  "RR"
 */
 struct PCB {
-    // pid (a positive integer)
-    // thread id (of type pthread_t),
-    // state,
-    // next CPU burst length (ms),
-    // remaining CPU burst length to execute (ms) (for RR scheduling),
-    // number of CPU bursts executed so far,
-    // time spent in ready list so far (ms),
-    // number of times I/O is done with device1,
-    // number of times I/O is done with device2,
-    // start time (ms), i.e., arrival time,
-    // finish time (ms),
-    // total execution time in CPU so far
-    int pid;
-    pthread_t tid;
-    enum state state;
-    int next_burst_length;
-    int remaining_burst_length;
-    int num_bursts;
-    int time_in_ready_list;
-    int IO_device1;
-    int IO_device2;
+    
+    int pid;                        // pid (a positive integer)
+    pthread_t tid;                  // thread id (of type pthread_t),
+    enum state state;               // state,
+    int next_burst_length;          // next CPU burst length (ms),
+    int remaining_burst_length;     // remaining CPU burst length to execute (ms) (for RR scheduling),
+    int num_bursts;                 // number of CPU bursts executed so far,
+    int time_in_ready_list;         // time spent in ready list so far (ms),
+    int IO_device1;                 // number of times I/O is done with device1,
+    int IO_device2;                 // number of times I/O is done with device2,
+    int start_time;                 // start time (ms), i.e., arrival time,
+    int finish_time;                // finish time (ms),
+    int total_execution_time;       // total execution time in CPU so far
 
-    int start_time;
-    int finish_time;
-    int total_execution_time;
 };
 struct pcb_node {
     struct PCB pcb;
