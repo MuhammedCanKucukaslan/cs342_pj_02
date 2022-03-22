@@ -6,6 +6,11 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <unistd.h>
+enum BOOL
+{
+    FALSE,
+    TRUE
+};
 enum state
 {
     RUNNING,
@@ -32,20 +37,19 @@ enum burst_distribution
 #define RR  "RR"
 */
 struct PCB {
-    
-    int pid;                        // pid (a positive integer)
-    pthread_t tid;                  // thread id (of type pthread_t),
-    enum state state;               // state,
-    int next_burst_length;          // next CPU burst length (ms),
-    int remaining_burst_length;     // remaining CPU burst length to execute (ms) (for RR scheduling),
-    int num_bursts;                 // number of CPU bursts executed so far,
-    int time_in_ready_list;         // time spent in ready list so far (ms),
-    int IO_device1;                 // number of times I/O is done with device1,
-    int IO_device2;                 // number of times I/O is done with device2,
-    int start_time;                 // start time (ms), i.e., arrival time,
-    int finish_time;                // finish time (ms),
-    int total_execution_time;       // total execution time in CPU so far
 
+    long pid;                  // pid (a positive integer)
+    pthread_t tid;             // thread id (of type pthread_t),
+    enum state state;          // state,
+    int next_burst_length;     // next CPU burst length (ms),
+    int remaining_burst_length;// remaining CPU burst length to execute (ms) (for RR scheduling),
+    int num_bursts;            // number of CPU bursts executed so far,
+    int time_in_ready_list;    // time spent in ready list so far (ms),
+    int IO_device1;            // number of times I/O is done with device1,
+    int IO_device2;            // number of times I/O is done with device2,
+    long start_time;           // start time (ms), i.e., arrival time,
+    int finish_time;           // finish time (ms),
+    int total_execution_time;  // total execution time in CPU so far
 };
 struct pcb_node {
     struct PCB pcb;
