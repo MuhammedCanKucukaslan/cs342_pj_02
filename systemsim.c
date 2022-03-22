@@ -172,6 +172,8 @@ int main(int argc, char **argv)
 
 
     /* thread join */
+
+
     pthread_join(gen_thread, NULL);
     pthread_join(sched_thread, NULL);
 
@@ -259,7 +261,7 @@ void *p_gen(void *arg)
         pthread_join(created_threads[i], NULL);
     }
     // nevertheless, sleep for 5 ms
-    usleep(5000);
+    //usleep(5000);
 
     struct timeval current_time;
     gettimeofday(&current_time, NULL);
