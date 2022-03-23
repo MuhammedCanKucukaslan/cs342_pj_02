@@ -256,7 +256,7 @@ void *p_gen(void *arg)
     gettimeofday(&current_time, NULL);
     long elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 + (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
     if(outmode == 3)
-        printf("\n%ld SCHEDULER THREAD EXITS:  allp_count: %d, running_process_count: %d\n\n", elapsed_time, allp_count, running_process_count);
+        printf("\n%ld Generator THREAD EXITS:  allp_count: %d, running_process_count: %d\n\n", elapsed_time, allp_count, running_process_count);
     
     pthread_exit(NULL);
 }
@@ -296,7 +296,7 @@ void *p_sched(void *arg)
         pthread_cond_wait(&wakeup_sched, &wakeup_sched_mutex);
 
         // try lock cpu_mutex i.e. check if need to schedule
-        if (pthread_mutex_trylock(&cpu_mutex) == 0) {
+        if ( toBeRun_pid == -1 &&pthread_mutex_trylock(&cpu_mutex) == 0) {
             toBeRun_pid = mutex_queue_rm();
             if (toBeRun_pid != -1) {
                 pthread_cond_broadcast(&wakeup_allProcs);
@@ -337,9 +337,9 @@ void *process(void *arg)
     gettimeofday(&current_time, NULL);
     elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 + (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
     if( outmode == 3)
-        printf("%ld process %d started\n", elapsed_time, (long) arg);
+        printf("%ld process %ld started\n", elapsed_time, (long) arg);
     // todo implement process
-    int pid = (int) arg;
+    int pid = (int) (long) arg;
     pthread_t tid = pthread_self();
     int gen_time = gen_burst_length();
     struct PCB my_pcb = {
