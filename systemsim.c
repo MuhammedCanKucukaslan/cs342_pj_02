@@ -202,6 +202,7 @@ int main(int argc, char **argv)
 void *p_gen(void *arg)
 {
     pthread_t *created_threads = (pthread_t *) malloc(ALLP * sizeof(pthread_t));
+    int created_threads_index = 0;
     if (outmode == 3)
         printf("Generator thread started.\n");
 
@@ -214,8 +215,11 @@ void *p_gen(void *arg)
     for (int i = 0; i < 10 && i < MAXP; i++) {
         allp_count++;
         running_process_count++;
+        pthread_t tid;
         // allp_count is the so-called pid of the processes
-        pthread_create(created_threads + allp_count - 1, NULL, process, (void *) (long) allp_count);
+        pthread_create(&tid, NULL, process, (void *) (long) allp_count);
+        created_threads[created_threads_index] = tid;
+        created_threads_index++;
     }
     // release lock of running process count
     pthread_mutex_unlock(&running_process_count_mutex);
@@ -228,12 +232,13 @@ void *p_gen(void *arg)
     }
     pthread_mutex_unlock(&sim_start_mutex);
 
-    pthread_cond_wait(&sim_start_cond, &sim_start_mutex);
+    //pthread_cond_wait(&sim_start_cond, &sim_start_mutex);
     // signal to p_sched running_process_count is non zero
     //pthread_mutex_lock(&running_process_count_mutex);
     //pthread_cond_signal(&sim_start_cond);
     //pthread_mutex_unlock(&running_process_count_mutex);
 
+    printf("GENERATOR initial threads DONE");
     while (allp_count < ALLP) {
         // sleep for 5ms
         usleep(5000);
@@ -241,9 +246,13 @@ void *p_gen(void *arg)
         pthread_mutex_lock(&running_process_count_mutex);
         if (running_process_count < MAXP && frandom() < pg) {
             allp_count++;
-            if (outmode == 3)
+            if (outmode == 3) {
                 printf("Generator: process %ld  will be created\n", allp_count);
-            pthread_create(created_threads + allp_count - 1, NULL, process, (void *) (long) allp_count);
+            }
+            pthread_t tid;
+            pthread_create(&tid, NULL, process, (void *) (long) allp_count);
+            created_threads[created_threads_index] = tid;
+            created_threads_index++;
             running_process_count++;
             if (outmode == 3)
                 printf("Generator: process %ld created, running_process_count: %d \n", allp_count,
@@ -257,7 +266,8 @@ void *p_gen(void *arg)
     // TODO replace with thread_join
     // It is guaranteed that all processes are created and included in running_process_count
     // So we can safely assume that all processes are finished if the running_process_count is 0
-    for (int i = 0; i < ALLP; ++i) {
+    printf("GENERATOR waiting for processes");
+    for (int i = 0; i < created_threads_index; ++i) {
         pthread_join(created_threads[i], NULL);
     }
     // nevertheless, sleep for 5 ms
@@ -268,8 +278,8 @@ void *p_gen(void *arg)
     long elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
                         (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
     if (outmode == 3)
-        printf("\n%ld SCHEDULER THREAD EXITS:  allp_count: %d, running_process_count: %d\n\n", elapsed_time, allp_count,
-               running_process_count);
+        printf("\n%ld GENERATOR THREAD EXITS:  allp_count: %ld, running_process_count: %d\n\n", elapsed_time,
+               allp_count, running_process_count);
     free(created_threads);
     pthread_exit(NULL);
 }
@@ -342,7 +352,7 @@ void *p_sched(void *arg)
                 else {
                     printf("%ld Scheduler: no process to be scheduled\n", elapsed_time);
                 }
-                printf("%ld Scheduler: allp_count: %d, running_process_count: %d\n", elapsed_time, allp_count,
+                printf("%ld Scheduler: allp_count: %ld, running_process_count: %d\n", elapsed_time, allp_count,
                        running_process_count);
             }
 
@@ -358,8 +368,8 @@ void *p_sched(void *arg)
     elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
                    (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
     if (outmode == 3)
-        printf("\n%ld SCHEDULER THREAD EXITS:  allp_count: %d, running_process_count: %d\n\n", elapsed_time, allp_count,
-               running_process_count);
+        printf("\n%ld SCHEDULER THREAD EXITS:  allp_count: %ld, running_process_count: %d\n\n", elapsed_time,
+               allp_count, running_process_count);
     pthread_exit(NULL);
 }
 
@@ -396,6 +406,7 @@ void *process(void *arg)
         // state is changed to Ready
         my_pcb.state = READY;
         mutex_queue_add(my_pcb);
+
 
         if (doitonce == TRUE) {
             pthread_mutex_lock(&sim_start_mutex);
