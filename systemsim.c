@@ -210,13 +210,11 @@ void *p_gen(void *arg)
         pthread_t tid;
         allp_count++;
         running_process_count++;
-        long *i = (long *) malloc(sizeof(long));
-        *i = allp_count;
+        long i = allp_count;
         // allp_count is the so-called pid of the processes
         pthread_create(&tid, NULL, process, (void *) i);
         created_threads[thread_count] = tid;
         thread_count++;
-        free(i);
     }
     // release lock of running process count
 
@@ -290,17 +288,20 @@ void *p_sched(void *arg)
     // get time of day and set it to the sim start time
     scheduler_started = 1;
 
+    
     // obtain lock of queue and signal main thread to start p_gen
     // then release the queue once we know that running_process_count is not 0
     pthread_mutex_lock(&pcb_queue_mutex);
-    pthread_cond_signal(&create_pgen_cond);
-
 
     // wait for generator to create at least one process
     pthread_mutex_lock(&running_process_count_mutex);
+    
+    pthread_mutex_lock(&create_pgen_mutex);
+    pthread_cond_signal(&create_pgen_cond);
+    pthread_mutex_unlock(&create_pgen_mutex);
+
     // It is guaranteed for allp_count to be positive but better to be safe than stay awake 4 A.M.
     while (running_process_count < 1 || allp_count < 1) {
-        pthread_cond_signal(&create_pgen_cond);
         pthread_cond_wait(&running_process_count_cond, &running_process_count_mutex);
     }
 
@@ -318,8 +319,10 @@ void *p_sched(void *arg)
             printf("%ld Scheduler begin while: allp_count: %d, running_process_count: %d\n", elapsed_time, allp_count,
                    running_process_count);
         }
+        // should be sure if queue has all elements
         pthread_mutex_lock(&wakeup_sched_mutex);
-        pthread_cond_wait(&wakeup_sched, &wakeup_sched_mutex);
+        if( allp_count != MAXP && allp_count!=10 )
+            pthread_cond_wait(&wakeup_sched, &wakeup_sched_mutex);
 
         gettimeofday(&current_time, NULL);
         elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
