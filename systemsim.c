@@ -331,14 +331,17 @@ void *p_sched(void *arg)
         }
 
 
+        printf("SCHED about to wait for wakeup\n");
         pthread_mutex_lock(&wakeup_sched_mutex);
         pthread_cond_wait(&wakeup_sched, &wakeup_sched_mutex);
+        printf("SCHED just woke up from wakeup\n");
 
 
         // try lock cpu_mutex i.e. check if need to schedule
-        if (pthread_mutex_trylock(&cpu_mutex) == 0) {
+        if (toBeRun_pid == -1 && pthread_mutex_trylock(&cpu_mutex) == 0) {
             toBeRun_pid = mutex_queue_rm();
             if (toBeRun_pid != -1) {
+                printf("SCHED about to BROADCAST\n");
                 pthread_cond_broadcast(&wakeup_allProcs);
             }
             // find elapsed time
@@ -362,6 +365,8 @@ void *p_sched(void *arg)
             pthread_mutex_unlock(&cpu_mutex);
         }
         pthread_mutex_unlock(&wakeup_sched_mutex);
+        printf("SCHED just released lock on wakeup mutex\n");
+
     } while ((allp_count < ALLP || running_process_count > 0));
 
     gettimeofday(&current_time, NULL);
@@ -429,12 +434,16 @@ void *process(void *arg)
         pthread_cond_signal(&wakeup_sched);
         pthread_mutex_unlock(&wakeup_sched_mutex);
 
+        printf("%ld Process %ld BEFORE LOCK CPU.\n", elapsed_time, pid);
 
         pthread_mutex_lock(&cpu_mutex);
         while (toBeRun_pid != my_pcb.pid) {
+            printf("%ld Process %ld WAIT LOCK CPU, TBR:%d.\n", elapsed_time, pid, toBeRun_pid);
+
             pthread_cond_wait(&wakeup_allProcs, &cpu_mutex);
         }
         toBeRun_pid = -1;
+        printf("%ld Process %ld AFTER LOCK CPU.\n", elapsed_time, pid);
 
         // our turn to use cpu
         // state is RUNNING
@@ -499,7 +508,7 @@ void *process(void *arg)
                            io1_wait_count);
                 // todo rethink about the lock & cond mechanism
                 pthread_mutex_lock(&io1_mutex);
-                
+
 
                 gettimeofday(&current_time, NULL);
                 elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
@@ -514,7 +523,7 @@ void *process(void *arg)
                 // simulate the IO run
                 usleep(T1 * 1000);// convert ms to us
                 // TODO update PCB
-                
+
                 pthread_mutex_unlock(&io1_mutex);
             } else if (rn <= 1) {
                 if (outmode == 3)
@@ -522,7 +531,7 @@ void *process(void *arg)
                            io2_wait_count);
                 my_pcb.state = WAITING;
                 pthread_mutex_lock(&io2_mutex);
-                
+
                 gettimeofday(&current_time, NULL);
                 elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
                                (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
@@ -535,7 +544,7 @@ void *process(void *arg)
                 // simulate the IO run
                 usleep(T2 * 1000);// convert ms to us
                 // TODO update PCB
-                
+
                 pthread_mutex_unlock(&io2_mutex);
             }
             if (my_pcb.state != TERMINATED) {
