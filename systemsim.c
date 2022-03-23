@@ -499,11 +499,7 @@ void *process(void *arg)
                            io1_wait_count);
                 // todo rethink about the lock & cond mechanism
                 pthread_mutex_lock(&io1_mutex);
-                io1_wait_count++;
-                while (io1_wait_count != 1) {
-                    io1_wait_count++;
-                    pthread_cond_wait(&io1_cond, &io1_mutex);
-                }
+                
 
                 gettimeofday(&current_time, NULL);
                 elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
@@ -518,8 +514,7 @@ void *process(void *arg)
                 // simulate the IO run
                 usleep(T1 * 1000);// convert ms to us
                 // TODO update PCB
-                io1_wait_count--;
-                pthread_cond_signal(&io1_cond);
+                
                 pthread_mutex_unlock(&io1_mutex);
             } else if (rn <= 1) {
                 if (outmode == 3)
@@ -527,10 +522,7 @@ void *process(void *arg)
                            io2_wait_count);
                 my_pcb.state = WAITING;
                 pthread_mutex_lock(&io2_mutex);
-                io2_wait_count++;
-                while (io2_wait_count != 1) {
-                    pthread_cond_wait(&io2_cond, &io2_mutex);
-                }
+                
                 gettimeofday(&current_time, NULL);
                 elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
                                (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
@@ -543,8 +535,7 @@ void *process(void *arg)
                 // simulate the IO run
                 usleep(T2 * 1000);// convert ms to us
                 // TODO update PCB
-                io2_wait_count--;
-                pthread_cond_signal(&io2_cond);
+                
                 pthread_mutex_unlock(&io2_mutex);
             }
             if (my_pcb.state != TERMINATED) {
