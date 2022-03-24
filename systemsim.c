@@ -33,14 +33,13 @@ struct timeval sim_start_date;
 struct timeval sim_end_date;
 
 // declare global variables
-long allp_count = 0;
 struct pcb_queue ready_queue = {NULL, NULL, 0};
-int toBeRun_pid = -1;// must be safeguarded by cpu_mutex
+int toBeRun_pid = -1;// changed ->. must be safeguarded by cpu_mutex
 int io1_wait_count = 0;
 int io2_wait_count = 0;
 int running_process_count = 0;
 int scheduler_started = -1;
-enum BOOL simstarted = FALSE;
+enum SIMULSTATE simstarted = TOSTART;
 
 pthread_mutex_t pcb_queue_mutex;            // mutex for adding to or removing from ready_queue
 pthread_mutex_t cpu_mutex;                  // mutex for running on the CPU
@@ -51,6 +50,7 @@ pthread_mutex_t wakeup_sched_mutex;         // mutex for waking up scheduler
 pthread_mutex_t io1_wait_count_mutex;       // mutex for io1_wait_count variable
 pthread_mutex_t io2_wait_count_mutex;       // mutex for io2_wait_count variable
 pthread_mutex_t sim_start_mutex;// mutex for creating pgen and condition variable initial_threads_created_cond
+pthread_mutex_t toBeRun_pid_mutex;
 
 pthread_cond_t cpu_cond_var;   // condition variable for processes waiting on CPU
 pthread_cond_t wakeup_sched;   // condition variable for waking up scheduler
@@ -125,7 +125,7 @@ int main(int argc, char **argv)
     pg = atof(argv[12]);
     MAXP = atoi(argv[13]);
     ALLP = atoi(argv[14]);
-    ALLP = 16;
+    ALLP = 5;
     outmode = atoi(argv[15]);
 
     // ps. We assume inputs are correct! https://moodle.bilkent.edu.tr/2021-2022-spring/mod/forum/discuss.php?d=4265
@@ -141,6 +141,7 @@ int main(int argc, char **argv)
     pthread_mutex_init(&io1_wait_count_mutex, NULL);
     pthread_mutex_init(&io2_wait_count_mutex, NULL);
     pthread_mutex_init(&sim_start_mutex, NULL);
+    pthread_mutex_init(&toBeRun_pid_mutex, NULL);
 
 
     // initialize condition variables
@@ -185,7 +186,13 @@ int main(int argc, char **argv)
 
     //pthread_join(gen_thread, NULL);
     //pthread_join(sched_thread, NULL);
-    time_t secs = 15;
+
+    int waitsecs = 5;
+    for (int i = 0; i < waitsecs; ++i) {
+        printf("MAIN joins in %d secs\n", waitsecs - i);
+        sleep(1);
+    }
+    time_t secs = 3;
     printf("MAIN waiting for thread exit for %ld + %ld secs\n", secs, secs);
     const struct timespec kill = {.tv_sec = secs, .tv_nsec = 0};
     pthread_timedjoin_np(gen_thread, NULL, &kill);
@@ -219,6 +226,7 @@ int main(int argc, char **argv)
     pthread_mutex_destroy(&wakeup_sched_mutex);
     pthread_mutex_destroy(&io1_wait_count_mutex);
     pthread_mutex_destroy(&io2_wait_count_mutex);
+    pthread_mutex_destroy(&toBeRun_pid_mutex);
 
     // destroy them (condition variables) all!
     pthread_cond_destroy(&cpu_cond_var);
@@ -233,6 +241,7 @@ int main(int argc, char **argv)
 
 void *p_gen(void *arg)
 {
+    long allp_count = 0;
     pthread_t *created_threads = (pthread_t *) malloc(ALLP * sizeof(pthread_t));
     int timeoutidx = 0;
     int created_threads_index = 0;
@@ -262,7 +271,7 @@ void *p_gen(void *arg)
     if (outmode == 3)
         printf("pgen generated first min{10, %d} threads, running_process_count=%d.\n", MAXP, running_process_count);
     pthread_mutex_lock(&sim_start_mutex);
-    while (simstarted != TRUE) {
+    while (simstarted != RUNNINGATM) {
         pthread_cond_wait(&sim_start_cond, &sim_start_mutex);
     }
     pthread_mutex_unlock(&sim_start_mutex);
@@ -307,6 +316,10 @@ void *p_gen(void *arg)
     for (int i = 0; i < created_threads_index; ++i) {
         pthread_join(created_threads[i], NULL);
     }
+    pthread_mutex_lock(&sim_start_mutex);
+    simstarted = ENDED;
+    pthread_mutex_unlock(&sim_start_mutex);
+
     // nevertheless, sleep for 5 ms
     //usleep(5000);
 
@@ -353,8 +366,12 @@ void *p_sched(void *arg)
     // since running_process_count
     pthread_mutex_unlock(&pcb_queue_mutex);
      */
-    do {
-        if (simstarted != TRUE) {
+    enum BOOL doitonce = TRUE;
+    pthread_mutex_lock(&sim_start_mutex);
+    while (simstarted != ENDED) {
+        pthread_mutex_unlock(&sim_start_mutex);
+
+        if (doitonce == TRUE && simstarted == TOSTART) {
             pthread_mutex_lock(&pcb_queue_mutex);
             while (ready_queue.count < 10 && ready_queue.count < MAXP) {
                 pthread_cond_wait(&initial_threads_created_cond, &pcb_queue_mutex);
@@ -362,10 +379,12 @@ void *p_sched(void *arg)
             pthread_mutex_unlock(&pcb_queue_mutex);
 
             pthread_mutex_lock(&sim_start_mutex);
-            simstarted = TRUE;
+            simstarted = RUNNINGATM;
+            doitonce = FALSE;
             pthread_cond_broadcast(&sim_start_cond);
             pthread_mutex_unlock(&sim_start_mutex);
         }
+        doitonce = FALSE;
 
 
         printf("SCHED about to wait for wakeup\n");
@@ -375,25 +394,33 @@ void *p_sched(void *arg)
 
 
         // try lock cpu_mutex i.e. check if need to schedule
-        if (toBeRun_pid == -1 && pthread_mutex_trylock(&cpu_mutex) == 0) {
-            toBeRun_pid = mutex_queue_rm();
+        int localTBR = -1;
+        if (pthread_mutex_trylock(&cpu_mutex) == 0) {
+            pthread_mutex_lock(&pcb_queue_mutex);
+            pthread_mutex_lock(&toBeRun_pid_mutex);
+            toBeRun_pid = pcb_queue_dequeue();
+            localTBR = toBeRun_pid;
             if (toBeRun_pid != -1) {
+                pthread_mutex_unlock(&toBeRun_pid_mutex);// careful here!
+                pthread_mutex_unlock(&pcb_queue_mutex);// DED maybe move
+
                 printf("SCHED about to BROADCAST\n");
                 pthread_cond_broadcast(&wakeup_allProcs);
+            } else {
+                pthread_mutex_unlock(&toBeRun_pid_mutex);
+                pthread_mutex_unlock(&pcb_queue_mutex);// DED maybe move
             }
             // find elapsed time
             gettimeofday(&current_time, NULL);
             elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
                            (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
             if (outmode == 3) {
-                if (toBeRun_pid != -1)
+                if (localTBR != -1)
                     printf("%ld Scheduler: process %d removed from queue and will be scheduled\n", elapsed_time,
-                           toBeRun_pid);
+                           localTBR);
                 else {
                     printf("%ld Scheduler: no process to be scheduled\n", elapsed_time);
                 }
-                printf("%ld Scheduler: allp_count: %ld, running_process_count: %d\n", elapsed_time, allp_count,
-                       running_process_count);
             }
 
             // else  empty queue what to do?
@@ -403,15 +430,16 @@ void *p_sched(void *arg)
         }
         pthread_mutex_unlock(&wakeup_sched_mutex);
         printf("SCHED just released lock on wakeup mutex\n");
+        pthread_mutex_lock(&sim_start_mutex);
+    }
+    pthread_mutex_unlock(&sim_start_mutex);
 
-    } while ((allp_count < ALLP || running_process_count > 0));
 
     gettimeofday(&current_time, NULL);
     elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
                    (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
     if (outmode == 3)
-        printf("\n%ld SCHEDULER THREAD EXITS:  allp_count: %ld, running_process_count: %d\n\n", elapsed_time,
-               allp_count, running_process_count);
+        printf("\n%ld SCHEDULER THREAD EXITS:   running_process_count: %d\n\n", elapsed_time, running_process_count);
     pthread_exit(NULL);
 }
 
@@ -452,12 +480,14 @@ void *process(void *arg)
 
         if (doitonce == TRUE) {
             pthread_mutex_lock(&sim_start_mutex);
-            while (simstarted != TRUE) {
+            while (simstarted != RUNNINGATM) {
                 pthread_cond_wait(&sim_start_cond, &sim_start_mutex);
             }
             pthread_mutex_unlock(&sim_start_mutex);
             doitonce = FALSE;
         }
+        doitonce = FALSE;
+
 
         // get elapsed time
         gettimeofday(&current_time, NULL);
@@ -474,12 +504,15 @@ void *process(void *arg)
         printf("%ld Process %ld BEFORE LOCK CPU.\n", elapsed_time, pid);
 
         pthread_mutex_lock(&cpu_mutex);
+        pthread_mutex_lock(&toBeRun_pid_mutex);
         while (toBeRun_pid != my_pcb.pid) {
             printf("%ld Process %ld WAIT LOCK CPU, TBR:%d.\n", elapsed_time, pid, toBeRun_pid);
-
+            pthread_mutex_unlock(&toBeRun_pid_mutex);
             pthread_cond_wait(&wakeup_allProcs, &cpu_mutex);
+            pthread_mutex_lock(&toBeRun_pid_mutex);
         }
         toBeRun_pid = -1;
+        pthread_mutex_unlock(&toBeRun_pid_mutex);
         printf("%ld Process %ld AFTER LOCK CPU.\n", elapsed_time, pid);
 
         // our turn to use cpu
@@ -606,7 +639,7 @@ void *process(void *arg)
                    (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
 
     if (outmode == 3)
-        printf("%ld Process %ld finished, running_process_count %d\n", elapsed_time, pid, running_process_count);
+        printf("%ld Process %ld finished\n", elapsed_time, pid);
     pthread_exit(NULL);
 }
 
@@ -654,9 +687,11 @@ int mutex_queue_rm()
 {
     // lock mutex
     pthread_mutex_lock(&pcb_queue_mutex);
+    pthread_mutex_lock(&toBeRun_pid_mutex);
     // select next pcb
     int pid = pcb_queue_dequeue();
     // unlock mutex
+    pthread_mutex_unlock(&toBeRun_pid_mutex);
     pthread_mutex_unlock(&pcb_queue_mutex);
     return pid;
 }
