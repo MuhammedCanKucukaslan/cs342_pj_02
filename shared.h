@@ -11,6 +11,12 @@ enum BOOL
     FALSE,
     TRUE
 };
+enum SIMULSTATE
+{
+    TOSTART,
+    RUNNINGATM,
+    ENDED
+};
 enum state
 {
     RUNNING,

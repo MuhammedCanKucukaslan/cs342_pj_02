@@ -13,11 +13,14 @@ run:a
 	#./systemsim FCFS INF 5 10 fixed 100 10 100 0.8 0.1 0.1 0.1 5 10 0 
 	
 r: a
-	./systemsim FCFS INF 5 10 fixed 100 10 100 0.3 0.3 0.4 0.5 3 5 3
+	./systemsim FCFS INF 5 10 fixed 100 10 100 0.3 0.3 0.4 0.5 3 16 3
 rr: a
-	./systemsim RR 5 50 100 fixed 20 10 100 1.0 0.0 0.0 0.9 9 50 3
+	./systemsim RR 5 50 100 fixed 20 10 100 1.0 0.0 0.0 0.9 9 16 3
 val: a
-	valgrind --leak-check=full --show-leak-kinds=all --leak-resolution=high --track-origins=yes --vgdb=yes ./systemsim FCFS INF 5 10 fixed 100 10 100 0.5 0.25 0.25 0.5 3 5 3
+	valgrind --leak-check=full --show-leak-kinds=all --leak-resolution=high --track-origins=yes --vgdb=yes ./systemsim FCFS INF 5 10 fixed 100 10 100 0.5 0.25 0.25 0.5 3 16 3
 	
+tsan: a
+	clang ./systemsim.c -o ./systemsim -fsanitize=thread -g -lpthread -lrt -lm
+
 clean:
 	rm -fr *~ systemsim 

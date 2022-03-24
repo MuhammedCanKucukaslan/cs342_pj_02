@@ -1,15 +1,19 @@
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "cert-err34-c"
+#define _GNU_SOURCE
 #include "shared.h"
+#include <features.h>
 #include <math.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 
 // declare arguments
+pthread_t timeouttids[16];
 enum algorithm alg;
 int Q;
 int T1;
@@ -121,6 +125,7 @@ int main(int argc, char **argv)
     pg = atof(argv[12]);
     MAXP = atoi(argv[13]);
     ALLP = atoi(argv[14]);
+    ALLP = 16;
     outmode = atoi(argv[15]);
 
     // ps. We assume inputs are correct! https://moodle.bilkent.edu.tr/2021-2022-spring/mod/forum/discuss.php?d=4265
@@ -146,6 +151,10 @@ int main(int argc, char **argv)
     pthread_cond_init(&io2_cond, NULL);
     pthread_cond_init(&sim_start_cond, NULL);
     pthread_cond_init(&initial_threads_created_cond, NULL);
+
+    for (int i = 0; i < 16; ++i) {
+        timeouttids[i] = -1;
+    }
 
 
     // initialize scheduler thread
@@ -174,8 +183,31 @@ int main(int argc, char **argv)
     /* thread join */
 
 
-    pthread_join(gen_thread, NULL);
-    pthread_join(sched_thread, NULL);
+    //pthread_join(gen_thread, NULL);
+    //pthread_join(sched_thread, NULL);
+    time_t secs = 15;
+    printf("MAIN waiting for thread exit for %ld + %ld secs\n", secs, secs);
+    const struct timespec kill = {.tv_sec = secs, .tv_nsec = 0};
+    pthread_timedjoin_np(gen_thread, NULL, &kill);
+    pthread_timedjoin_np(sched_thread, NULL, &kill);
+
+    //kill them
+    int killsecs = 10;
+    for (int i = 0; i < killsecs; ++i) {
+        printf("MAIN KILLS everything in %d secs\n", killsecs - i);
+        sleep(1);
+    }
+    pthread_cancel(gen_thread);
+    pthread_cancel(sched_thread);
+    int killed = 0;
+    for (int i = 0; i < 16; ++i) {
+        if (timeouttids[i] != -1) {
+            printf("MAIN KILLED %d\n", killed);
+            pthread_cancel(timeouttids[i]);
+            killed++;
+            printf("MAIN KILLED %d\n", killed);
+        }
+    }
 
 
     // destroy them (mutexes) all!
@@ -202,6 +234,7 @@ int main(int argc, char **argv)
 void *p_gen(void *arg)
 {
     pthread_t *created_threads = (pthread_t *) malloc(ALLP * sizeof(pthread_t));
+    int timeoutidx = 0;
     int created_threads_index = 0;
     if (outmode == 3)
         printf("Generator thread started.\n");
@@ -219,6 +252,8 @@ void *p_gen(void *arg)
         // allp_count is the so-called pid of the processes
         pthread_create(&tid, NULL, process, (void *) (long) allp_count);
         created_threads[created_threads_index] = tid;
+        timeouttids[timeoutidx] = tid;
+        timeoutidx++;
         created_threads_index++;
     }
     // release lock of running process count
@@ -253,6 +288,8 @@ void *p_gen(void *arg)
             pthread_create(&tid, NULL, process, (void *) (long) allp_count);
             created_threads[created_threads_index] = tid;
             created_threads_index++;
+            timeouttids[timeoutidx] = tid;
+            timeoutidx++;
             running_process_count++;
             if (outmode == 3)
                 printf("Generator: process %ld created, running_process_count: %d \n", allp_count,
