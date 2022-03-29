@@ -123,7 +123,14 @@ int main(int argc, char **argv)
     outmode = atoi(argv[15]);
 
     // ps. We assume inputs are correct! https://moodle.bilkent.edu.tr/2021-2022-spring/mod/forum/discuss.php?d=4265
+    srand(time(NULL));
 
+/*
+    for(int i = 0; i< 20; i++){
+        printf("burst length: %d\n", gen_burst_length());
+    }
+    exit(0);
+*/
     // initialize mutexes
     pthread_mutex_init(&pcb_queue_mutex, NULL);
     pthread_mutex_init(&cpu_mutex, NULL);
@@ -168,7 +175,7 @@ int main(int argc, char **argv)
 
     /* thread join */
     pthread_join(gen_thread, NULL);
-    pthread_join(sched_thread, NULL);
+    pthread_cancel(sched_thread);
 
 
     // destroy them (mutexes) all!
@@ -316,20 +323,20 @@ void *p_sched(void *arg)
         elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
                        (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
         if (outmode == 3) {
-            printf("%ld Scheduler begin while: allp_count: %d, running_process_count: %d\n", elapsed_time, allp_count,
-                   running_process_count);
+            printf("%ld Scheduler begin while: allp_count: %d, running_process_count: %d, queue size: %d, io1 count: %d, io2 count: %d  \n", elapsed_time, allp_count,
+                   running_process_count, ready_queue.count, io1_wait_count, io2_wait_count);
         }
         // should be sure if queue has all elements
         pthread_mutex_lock(&wakeup_sched_mutex);
-        if( allp_count != MAXP && allp_count!=10 )
+        if( allp_count >= MAXP || allp_count >=10 )
             pthread_cond_wait(&wakeup_sched, &wakeup_sched_mutex);
 
         gettimeofday(&current_time, NULL);
         elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
                        (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
         if (outmode == 3) {
-            printf("%ld Scheduler before if: allp_count: %d, running_process_count: %d\n", elapsed_time, allp_count,
-                   running_process_count);
+            printf("%ld Scheduler before if: allp_count: %d, running_process_count: %d, queue size: %d, io1 count: %d, io2 count: %d  \n", elapsed_time, allp_count,
+                   running_process_count, ready_queue.count, io1_wait_count, io2_wait_count);
         }
         // try lock cpu_mutex i.e. check if need to schedule
         if (toBeRun_pid == -1 && pthread_mutex_trylock(&cpu_mutex) == 0) {
@@ -338,6 +345,7 @@ void *p_sched(void *arg)
                 pthread_cond_broadcast(&wakeup_allProcs);
             }
             // find elapsed time
+            
             gettimeofday(&current_time, NULL);
             elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
                            (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
@@ -350,6 +358,10 @@ void *p_sched(void *arg)
                 }
                 printf("%ld Scheduler: allp_count: %d, running_process_count: %d\n", elapsed_time, allp_count,
                        running_process_count);
+                if (ready_queue.count > 0) {
+                    printf("Pid: %d\n", ready_queue.head->pcb.pid);
+                }
+
             }
 
             // else  empty queue what to do?
@@ -493,7 +505,12 @@ void *process(void *arg)
                     printf("%ld Process %d shall be put to waiting queue of DEVICE1, wait: %d.\n", elapsed_time, pid,
                            io1_wait_count);
 
-                pthread_mutex_lock(&io1_mutex);
+                pthread_mutex_lock(&io1_wait_count_mutex);
+                io1_wait_count++;
+                if (io1_wait_count > 1) {
+                    pthread_cond_wait(&io1_cond, &io1_wait_count_mutex);
+                }
+                pthread_mutex_unlock(&io1_wait_count_mutex);
 
                 gettimeofday(&current_time, NULL);
                 elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
@@ -508,13 +525,23 @@ void *process(void *arg)
                 // simulate the IO run
                 usleep(T1 * 1000);// convert ms to us
                 // TODO update PCB
-                pthread_mutex_unlock(&io1_mutex);
+
+                pthread_mutex_lock(&io1_wait_count_mutex);
+                io1_wait_count--;
+                pthread_cond_signal(&io1_cond);
+                pthread_mutex_unlock(&io1_wait_count_mutex);
             } else if (rn <= 1) {
+                my_pcb.state = WAITING;
                 if (outmode == 3)
                     printf("%ld Process %d shall be put to waiting queue of DEVICE2, wait: %d.\n", elapsed_time, pid,
                            io2_wait_count);
-                my_pcb.state = WAITING;
-                pthread_mutex_lock(&io2_mutex);
+
+                pthread_mutex_lock(&io2_wait_count_mutex);
+                io2_wait_count++;
+                if (io2_wait_count > 1) {
+                    pthread_cond_wait(&io2_cond, &io2_wait_count_mutex);
+                }
+                pthread_mutex_unlock(&io2_wait_count_mutex);
 
                 gettimeofday(&current_time, NULL);
                 elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
@@ -525,12 +552,15 @@ void *process(void *arg)
                 } else if (outmode == 3) {
                     printf("%ld %d USING DEVICE2, T2 = %d\n", elapsed_time, my_pcb.pid, T2);
                 }
+
                 // simulate the IO run
                 usleep(T2 * 1000);// convert ms to us
                 // TODO update PCB
+
+                pthread_mutex_lock(&io2_wait_count_mutex);
                 io2_wait_count--;
                 pthread_cond_signal(&io2_cond);
-                pthread_mutex_unlock(&io2_mutex);
+                pthread_mutex_unlock(&io2_wait_count_mutex);
             }
             if (my_pcb.state != TERMINATED) {
                 my_pcb.next_burst_length = gen_burst_length();
@@ -588,11 +618,16 @@ int gen_burst_length()
 
 void mutex_queue_add(struct PCB pcb)
 {
+    printf("Process %d will get pcb_queue_mutex:", pcb.pid);
     // lock mutex
     pthread_mutex_lock(&pcb_queue_mutex);
     // add pcb to queue
+    
+    printf("Process %d will got pcb_queue_mutex:", pcb.pid);
     pcb_queue_insert(pcb);
     // unlock mutex
+    
+    printf("Process %d will relesed pcb_queue_mutex:", pcb.pid);
     pthread_mutex_unlock(&pcb_queue_mutex);
 };
 
