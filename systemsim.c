@@ -186,11 +186,13 @@ int main(int argc, char **argv)
 
     //pthread_join(gen_thread, NULL);
     //pthread_join(sched_thread, NULL);
-
-    int waitsecs = 5;
+    sleep(10);
+    int waitsecs = 10;
     for (int i = 0; i < waitsecs; ++i) {
         printf("MAIN joins in %d secs\n", waitsecs - i);
         sleep(1);
+        pthread_cond_broadcast(&wakeup_allProcs);
+        pthread_cond_signal(&wakeup_sched);
     }
     time_t secs = 3;
     printf("MAIN waiting for thread exit for %ld + %ld secs\n", secs, secs);
@@ -319,6 +321,9 @@ void *p_gen(void *arg)
     pthread_mutex_lock(&sim_start_mutex);
     simstarted = ENDED;
     pthread_mutex_unlock(&sim_start_mutex);
+    pthread_mutex_lock(&wakeup_sched_mutex);
+    pthread_cond_signal(&wakeup_sched);
+    pthread_mutex_unlock(&wakeup_sched_mutex);
 
     // nevertheless, sleep for 5 ms
     //usleep(5000);
@@ -389,25 +394,26 @@ void *p_sched(void *arg)
 
         printf("SCHED about to wait for wakeup\n");
         pthread_mutex_lock(&wakeup_sched_mutex);
+        // send signal when process exit and/or gen exit
         pthread_cond_wait(&wakeup_sched, &wakeup_sched_mutex);
         printf("SCHED just woke up from wakeup\n");
 
 
         // try lock cpu_mutex i.e. check if need to schedule
         int localTBR = -1;
-        if (pthread_mutex_trylock(&cpu_mutex) == 0) {
+        if (pthread_mutex_trylock(&cpu_mutex) == 0 && toBeRun_pid == -1) {
             pthread_mutex_lock(&pcb_queue_mutex);
-            pthread_mutex_lock(&toBeRun_pid_mutex);
+            //pthread_mutex_lock(&toBeRun_pid_mutex);
             toBeRun_pid = pcb_queue_dequeue();
             localTBR = toBeRun_pid;
             if (toBeRun_pid != -1) {
-                pthread_mutex_unlock(&toBeRun_pid_mutex);// careful here!
+                //pthread_mutex_unlock(&toBeRun_pid_mutex);// careful here!
                 pthread_mutex_unlock(&pcb_queue_mutex);// DED maybe move
 
                 printf("SCHED about to BROADCAST\n");
                 pthread_cond_broadcast(&wakeup_allProcs);
             } else {
-                pthread_mutex_unlock(&toBeRun_pid_mutex);
+                //pthread_mutex_unlock(&toBeRun_pid_mutex);
                 pthread_mutex_unlock(&pcb_queue_mutex);// DED maybe move
             }
             // find elapsed time
@@ -480,7 +486,7 @@ void *process(void *arg)
 
         if (doitonce == TRUE) {
             pthread_mutex_lock(&sim_start_mutex);
-            while (simstarted != RUNNINGATM) {
+            while (simstarted == TOSTART) {
                 pthread_cond_wait(&sim_start_cond, &sim_start_mutex);
             }
             pthread_mutex_unlock(&sim_start_mutex);
@@ -503,16 +509,32 @@ void *process(void *arg)
 
         printf("%ld Process %ld BEFORE LOCK CPU.\n", elapsed_time, pid);
 
-        pthread_mutex_lock(&cpu_mutex);
-        pthread_mutex_lock(&toBeRun_pid_mutex);
+        //pthread_mutex_lock(&toBeRun_pid_mutex);
+        //pthread_mutex_lock(&cpu_mutex);
         while (toBeRun_pid != my_pcb.pid) {
             printf("%ld Process %ld WAIT LOCK CPU, TBR:%d.\n", elapsed_time, pid, toBeRun_pid);
-            pthread_mutex_unlock(&toBeRun_pid_mutex);
-            pthread_cond_wait(&wakeup_allProcs, &cpu_mutex);
-            pthread_mutex_lock(&toBeRun_pid_mutex);
+            //pthread_mutex_unlock(&toBeRun_pid_mutex);
+            //pthread_mutex_lock(&wakeup_sched_mutex);
+            //pthread_cond_signal(&wakeup_sched);
+            //pthread_cond_broadcast(&wakeup_allProcs);
+            //pthread_mutex_unlock(&wakeup_sched_mutex);
+            struct timespec ts;
+
+            pthread_mutex_lock(&cpu_mutex);
+            printf("%ld Process %ld GOT MUTEX COND_WAIT, TBR:%d.\n", elapsed_time, pid, toBeRun_pid);
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec += 1;
+            pthread_cond_timedwait(&wakeup_allProcs, &cpu_mutex,&ts);
+            printf("%ld Process %ld AFTER COND_WAIT, TBR:%d.\n", elapsed_time, pid, toBeRun_pid);
+            pthread_mutex_unlock(&cpu_mutex);
+            printf("%ld Process %ld UNLOCK MUTEX, TBR:%d.\n", elapsed_time, pid, toBeRun_pid);
+
+
+            //pthread_mutex_lock(&toBeRun_pid_mutex);
         }
+        pthread_mutex_lock(&cpu_mutex);
         toBeRun_pid = -1;
-        pthread_mutex_unlock(&toBeRun_pid_mutex);
+        //pthread_mutex_unlock(&toBeRun_pid_mutex);
         printf("%ld Process %ld AFTER LOCK CPU.\n", elapsed_time, pid);
 
         // our turn to use cpu
@@ -634,6 +656,10 @@ void *process(void *arg)
     running_process_count--;
     pthread_mutex_unlock(&running_process_count_mutex);
 
+    pthread_mutex_lock(&wakeup_sched_mutex);
+    pthread_cond_signal(&wakeup_sched);
+    pthread_mutex_unlock(&wakeup_sched_mutex);
+
     gettimeofday(&current_time, NULL);
     elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
                    (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
@@ -687,11 +713,11 @@ int mutex_queue_rm()
 {
     // lock mutex
     pthread_mutex_lock(&pcb_queue_mutex);
-    pthread_mutex_lock(&toBeRun_pid_mutex);
+    //pthread_mutex_lock(&toBeRun_pid_mutex);
     // select next pcb
     int pid = pcb_queue_dequeue();
     // unlock mutex
-    pthread_mutex_unlock(&toBeRun_pid_mutex);
+    //pthread_mutex_unlock(&toBeRun_pid_mutex);
     pthread_mutex_unlock(&pcb_queue_mutex);
     return pid;
 }

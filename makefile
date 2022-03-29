@@ -13,7 +13,7 @@ run:a
 	#./systemsim FCFS INF 5 10 fixed 100 10 100 0.8 0.1 0.1 0.1 5 10 0 
 	
 r: a
-	./systemsim FCFS INF 5 10 fixed 100 10 100 0.3 0.3 0.4 0.5 3 5 3
+	./systemsim FCFS INF 5 10 fixed 100 10 100 0.3 0.3 0.4 0.5 3 16 3
 rr: a
 	./systemsim RR 5 50 100 fixed 20 10 100 1.0 0.0 0.0 0.9 9 16 3
 val: a
