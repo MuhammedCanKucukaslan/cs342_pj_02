@@ -71,6 +71,9 @@ void pcb_queue_insert(struct PCB pcb);
 float frandom();
 char *getStateName(enum state s);
 
+
+void updateTime(struct timeval* ct_tv, long* elapsed_time);
+
 int main(int argc, char **argv)
 {
 
@@ -172,7 +175,7 @@ int main(int argc, char **argv)
     // unlock
     pthread_mutex_unlock(&create_pgen_mutex);
 
-
+    
     /* thread join */
     pthread_join(gen_thread, NULL);
     pthread_cancel(sched_thread);
@@ -319,36 +322,49 @@ void *p_sched(void *arg)
     while (allp_count < ALLP || running_process_count > 0) {
         pthread_mutex_unlock(&running_process_count_mutex);
 
-        gettimeofday(&current_time, NULL);
-        elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
-                       (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
+        updateTime(&current_time, &elapsed_time);
         if (outmode == 3) {
             printf("%ld Scheduler begin while: allp_count: %d, running_process_count: %d, queue size: %d, io1 count: %d, io2 count: %d  \n", elapsed_time, allp_count,
                    running_process_count, ready_queue.count, io1_wait_count, io2_wait_count);
         }
-        // should be sure if queue has all elements
+        // should be sure if queue has all initial elements
         pthread_mutex_lock(&wakeup_sched_mutex);
-        if( allp_count >= MAXP || allp_count >=10 )
+        if( allp_count >= MAXP) {
+            updateTime(&current_time, &elapsed_time);
+            if (outmode == 3) {
+                printf("%ld Scheduler begin if: allp_count: %d, running_process_count: %d, queue size: %d, io1 count: %d, io2 count: %d  \n", elapsed_time, allp_count,
+                    running_process_count, ready_queue.count, io1_wait_count, io2_wait_count);
+            }
             pthread_cond_wait(&wakeup_sched, &wakeup_sched_mutex);
-
-        gettimeofday(&current_time, NULL);
-        elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
-                       (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
+        }
+        updateTime(&current_time, &elapsed_time);
         if (outmode == 3) {
-            printf("%ld Scheduler before if: allp_count: %d, running_process_count: %d, queue size: %d, io1 count: %d, io2 count: %d  \n", elapsed_time, allp_count,
-                   running_process_count, ready_queue.count, io1_wait_count, io2_wait_count);
+            printf("%ld Scheduler before if: allp_count: %d, running_process_count: %d, queue size: %d, io1 count: %d, io2 count: %d , toBeRun_pid: %d \n", elapsed_time, allp_count,
+                   running_process_count, ready_queue.count, io1_wait_count, io2_wait_count, toBeRun_pid);
         }
         // try lock cpu_mutex i.e. check if need to schedule
         if (toBeRun_pid == -1 && pthread_mutex_trylock(&cpu_mutex) == 0) {
+            updateTime(&current_time, &elapsed_time);
+            if (outmode == 3) {
+                printf("%ld Scheduler begin pthread_mutex_trylock: allp_count: %d, running_process_count: %d, queue size: %d, io1 count: %d, io2 count: %d , toBeRun_pid: %d \n", elapsed_time, allp_count,
+                    running_process_count, ready_queue.count, io1_wait_count, io2_wait_count, toBeRun_pid);
+            }
             toBeRun_pid = mutex_queue_rm();
             if (toBeRun_pid != -1) {
+                updateTime(&current_time, &elapsed_time);
+                if (outmode == 3) {
+                printf("%ld Scheduler send wake up signal: allp_count: %d, running_process_count: %d, queue size: %d, io1 count: %d, io2 count: %d , toBeRun_pid: %d \n", elapsed_time, allp_count,
+                    running_process_count, ready_queue.count, io1_wait_count, io2_wait_count, toBeRun_pid);
+                }
                 pthread_cond_broadcast(&wakeup_allProcs);
+                updateTime(&current_time, &elapsed_time);
+                if (outmode == 3) {
+                printf("%ld Scheduler sent wake up signal: allp_count: %d, running_process_count: %d, queue size: %d, io1 count: %d, io2 count: %d , toBeRun_pid: %d \n", elapsed_time, allp_count,
+                    running_process_count, ready_queue.count, io1_wait_count, io2_wait_count, toBeRun_pid);
+                }
             }
             // find elapsed time
-            
-            gettimeofday(&current_time, NULL);
-            elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
-                           (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
+            updateTime(&current_time, &elapsed_time);
             if (outmode == 3) {
                 if (toBeRun_pid != -1)
                     printf("%ld Scheduler: process %d removed from queue and will be scheduled\n", elapsed_time,
@@ -366,12 +382,15 @@ void *p_sched(void *arg)
 
             // else  empty queue what to do?
             // do  nothing
+            updateTime(&current_time, &elapsed_time);
+            if (outmode == 3) {
+                printf("%ld Scheduler empty queue: allp_count: %d, running_process_count: %d, queue size: %d, io1 count: %d, io2 count: %d , toBeRun_pid: %d \n", elapsed_time, allp_count,
+                    running_process_count, ready_queue.count, io1_wait_count, io2_wait_count, toBeRun_pid);
+            }
 
             pthread_mutex_unlock(&cpu_mutex);
         }
-        gettimeofday(&current_time, NULL);
-        elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
-                       (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
+        updateTime(&current_time, &elapsed_time);
         if (outmode == 3) {
             printf("%ld Scheduler after if: allp_count: %d, running_process_count: %d, toberun: %d\n", elapsed_time,
                    allp_count, running_process_count, toBeRun_pid);
@@ -382,9 +401,7 @@ void *p_sched(void *arg)
     pthread_mutex_unlock(&running_process_count_mutex);
 
 
-    gettimeofday(&current_time, NULL);
-    elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
-                   (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
+    updateTime(&current_time, &elapsed_time);
     if (outmode == 3)
         printf("\n%ld SCHEDULER THREAD EXITS:  allp_count: %d, running_process_count: %d\n\n", elapsed_time, allp_count,
                running_process_count);
@@ -477,8 +494,9 @@ void *process(void *arg)
         gettimeofday(&current_time, NULL);
         elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
                        (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
-        if (outmode == 3)
+        if (outmode == 3) {
             printf("%ld Process %d finished its burst.\n", elapsed_time, pid);
+    }
         pthread_mutex_unlock(&cpu_mutex);
 
         // do io/term only RR is completely done with the burst or burst ended in other algorithm
@@ -618,16 +636,16 @@ int gen_burst_length()
 
 void mutex_queue_add(struct PCB pcb)
 {
-    printf("Process %d will get pcb_queue_mutex:", pcb.pid);
+    printf("Process %d will get pcb_queue_mutex.\n", pcb.pid);
     // lock mutex
     pthread_mutex_lock(&pcb_queue_mutex);
     // add pcb to queue
     
-    printf("Process %d will got pcb_queue_mutex:", pcb.pid);
+    printf("Process %d will got pcb_queue_mutex.\n", pcb.pid);
     pcb_queue_insert(pcb);
     // unlock mutex
     
-    printf("Process %d will relesed pcb_queue_mutex:", pcb.pid);
+    printf("Process %d will relesed pcb_queue_mutex.\n", pcb.pid);
     pthread_mutex_unlock(&pcb_queue_mutex);
 };
 
@@ -710,4 +728,11 @@ char *getStateName(enum state s)
         default:
             return "UNKNOWN";
     }
+}
+
+
+void updateTime(struct timeval* ct_tv, long* elapsed_time) {
+    gettimeofday(ct_tv, NULL);
+    *elapsed_time = (ct_tv->tv_sec - sim_start_date.tv_sec) * 1000 +
+                           (ct_tv->tv_usec - sim_start_date.tv_usec) / 1000;
 }
