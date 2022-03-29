@@ -36,6 +36,7 @@ int io1_wait_count = 0;
 int io2_wait_count = 0;
 int running_process_count = 0;// safeguarded by running_process_count_mutex
 int scheduler_started = -1;
+struct PCB* pcb_array;
 
 pthread_mutex_t pcb_queue_mutex;            // mutex for adding to or removing from ready_queue
 pthread_mutex_t cpu_mutex;                  // mutex for running on the CPU
@@ -94,7 +95,7 @@ int main(int argc, char **argv)
         printf("Invalid algorithm %s\n", tmp_alg);
         exit(1);
     }
-    printf("Algorithm: %s\n", tmp_alg);
+    //printf("Algorithm: %s\n", tmp_alg);
     Q = -1;
     if (alg == RR) {
         Q = atoi(argv[2]);
@@ -128,12 +129,10 @@ int main(int argc, char **argv)
     // ps. We assume inputs are correct! https://moodle.bilkent.edu.tr/2021-2022-spring/mod/forum/discuss.php?d=4265
     srand(time(NULL));
 
-/*
-    for(int i = 0; i< 20; i++){
-        printf("burst length: %d\n", gen_burst_length());
-    }
-    exit(0);
-*/
+
+    // allocate array for the process PCBs
+    pcb_array = (struct PCB*) malloc( ALLP * sizeof(struct PCB));
+
     // initialize mutexes
     pthread_mutex_init(&pcb_queue_mutex, NULL);
     pthread_mutex_init(&cpu_mutex, NULL);
@@ -178,6 +177,7 @@ int main(int argc, char **argv)
     
     /* thread join */
     pthread_join(gen_thread, NULL);
+    pthread_detach(sched_thread);
     pthread_cancel(sched_thread);
 
 
@@ -199,6 +199,13 @@ int main(int argc, char **argv)
     pthread_cond_destroy(&io2_cond);
     pthread_cond_destroy(&running_process_count_cond);
 
+    struct PCB cur_pcb;
+    printf("%12s %12s %12s %12s %12s %12s %12s %12s %12s ","pid", "arv", "dept", "cpu", "waitr", "turna", "n-bursts", "n-d1", "n-d2");
+    for(int i = 0; i < ALLP; i++) {
+        cur_pcb = pcb_array[i];
+        printf("\n%12d %12d %12d %12d %12d %12d %12d %12d %12d", cur_pcb.pid, cur_pcb.start_time, cur_pcb.finish_time, cur_pcb.total_execution_time, cur_pcb.time_in_ready_list, cur_pcb.finish_time - cur_pcb.start_time, cur_pcb.num_bursts, cur_pcb.IO_device1, cur_pcb.IO_device2);
+    }
+    free(pcb_array);
     return 0;
 }// END main function
 
@@ -273,12 +280,8 @@ void *p_gen(void *arg)
         pthread_join(created_threads[i], NULL);
     }
 
-    // nevertheless, sleep for 5 ms
-    usleep(5000);
-
-    gettimeofday(&current_time, NULL);
-    long elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
-                        (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
+    long elapsed_time = 0;
+    updateTime(&current_time, &elapsed_time);
     if (outmode == 3)
         printf("\n%ld Generator THREAD EXITS:  allp_count: %d, running_process_count: %d\n\n", elapsed_time, allp_count,
                running_process_count);
@@ -329,7 +332,7 @@ void *p_sched(void *arg)
         }
         // should be sure if queue has all initial elements
         pthread_mutex_lock(&wakeup_sched_mutex);
-        if( allp_count >= MAXP) {
+        if( allp_count > MAXP) {
             updateTime(&current_time, &elapsed_time);
             if (outmode == 3) {
                 printf("%ld Scheduler begin if: allp_count: %d, running_process_count: %d, queue size: %d, io1 count: %d, io2 count: %d  \n", elapsed_time, allp_count,
@@ -413,12 +416,10 @@ void *process(void *arg)
     struct timeval current_time;
     long elapsed_time;
 
-    gettimeofday(&current_time, NULL);
-    elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
-                   (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
+    updateTime(&current_time, &elapsed_time);
     if (outmode == 3)
         printf("%ld process %ld started\n", elapsed_time, (long) arg);
-    // todo implement process
+
     int pid = (int) (long) arg;
     pthread_t tid = pthread_self();
     int gen_time = gen_burst_length();
@@ -436,15 +437,14 @@ void *process(void *arg)
             .finish_time = 1,
             .total_execution_time = 0,
     };
-
+    long added_time = 0;
     do {
         // state is changed to Ready
         my_pcb.state = READY;
         mutex_queue_add(my_pcb);
         // get elapsed time
-        gettimeofday(&current_time, NULL);
-        elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
-                       (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
+        updateTime(&current_time, &elapsed_time);
+        added_time = elapsed_time;
         if (outmode == 3)
             printf("%ld Process %d added to ready queue.\n", elapsed_time, pid);
 
@@ -459,7 +459,12 @@ void *process(void *arg)
             pthread_cond_wait(&wakeup_allProcs, &cpu_mutex);
         }
         toBeRun_pid = -1;
-
+        
+        /* // we actually took the mutex, so we can assume that we are not in the ready list
+            // but nevertheless we should consider the when we start simulation 
+            updateTime(&current_time, &elapsed_time);
+            my_pcb.time_in_ready_list = my_pcb.time_in_ready_list + elapsed_time - added_time;
+        */
         // our turn to use cpu
         // state is RUNNING
         my_pcb.state = RUNNING;
@@ -473,9 +478,7 @@ void *process(void *arg)
         }
 
         // find time elapsed since sim_start_date in ms
-        gettimeofday(&current_time, NULL);
-        elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
-                       (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
+        updateTime(&current_time, &elapsed_time);
         if (outmode == 2) {
             // . If it is 2, the running thread will print out the current time (in ms
             // from the start of the simulation), its pid and its state to the screen.
@@ -484,16 +487,20 @@ void *process(void *arg)
             printf("%ld %d %s, burstlength = %d, sleep_time: %d\n", elapsed_time, my_pcb.pid,
                    getStateName(my_pcb.state), my_pcb.remaining_burst_length, sleep_time);
         }
+        my_pcb.time_in_ready_list = my_pcb.time_in_ready_list + elapsed_time - added_time;
+
         usleep(sleep_time * 1000);
         // update remaining burst length
         my_pcb.remaining_burst_length = my_pcb.remaining_burst_length - sleep_time;
+        // update total execution time
+        my_pcb.total_execution_time = my_pcb.total_execution_time + sleep_time;
+        // update number of bursts
+        my_pcb.num_bursts++;
 
-        // todo update pcb variables
+
 
         // get elapsed time
-        gettimeofday(&current_time, NULL);
-        elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
-                       (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
+        updateTime(&current_time, &elapsed_time);
         if (outmode == 3) {
             printf("%ld Process %d finished its burst.\n", elapsed_time, pid);
     }
@@ -509,10 +516,8 @@ void *process(void *arg)
             float rn = frandom();
 
             // get elapse
-            gettimeofday(&current_time, NULL);
-            elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
-                           (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
-
+            updateTime(&current_time, &elapsed_time);
+    
             if (rn < p0) {
                 my_pcb.state = TERMINATED;
                 if (outmode == 3)
@@ -530,9 +535,7 @@ void *process(void *arg)
                 }
                 pthread_mutex_unlock(&io1_wait_count_mutex);
 
-                gettimeofday(&current_time, NULL);
-                elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
-                               (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
+                updateTime(&current_time, &elapsed_time);
                 if (outmode == 2) {
                     //  print out the current time (ms), its pid, and the device that it is using.
                     printf("%ld %d USING DEVICE1\n", elapsed_time, my_pcb.pid);
@@ -542,7 +545,8 @@ void *process(void *arg)
 
                 // simulate the IO run
                 usleep(T1 * 1000);// convert ms to us
-                // TODO update PCB
+                // update PCB
+                my_pcb.IO_device1++;
 
                 pthread_mutex_lock(&io1_wait_count_mutex);
                 io1_wait_count--;
@@ -561,9 +565,7 @@ void *process(void *arg)
                 }
                 pthread_mutex_unlock(&io2_wait_count_mutex);
 
-                gettimeofday(&current_time, NULL);
-                elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
-                               (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
+                updateTime(&current_time, &elapsed_time);
                 if (outmode == 2) {
                     //  print out the current time (ms), its pid, and the device that it is using.
                     printf("%ld %d USING DEVICE2\n", elapsed_time, my_pcb.pid);
@@ -573,7 +575,8 @@ void *process(void *arg)
 
                 // simulate the IO run
                 usleep(T2 * 1000);// convert ms to us
-                // TODO update PCB
+                // update PCB
+                my_pcb.IO_device2++;
 
                 pthread_mutex_lock(&io2_wait_count_mutex);
                 io2_wait_count--;
@@ -583,9 +586,7 @@ void *process(void *arg)
             if (my_pcb.state != TERMINATED) {
                 my_pcb.next_burst_length = gen_burst_length();
                 my_pcb.remaining_burst_length = my_pcb.next_burst_length;
-                gettimeofday(&current_time, NULL);
-                elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
-                               (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
+                updateTime(&current_time, &elapsed_time);
                 if (outmode == 3)
                     printf("%ld Process %d is not terminated, burslength %d ms\n", elapsed_time, my_pcb.pid,
                            my_pcb.next_burst_length);
@@ -597,12 +598,12 @@ void *process(void *arg)
     running_process_count--;
     pthread_mutex_unlock(&running_process_count_mutex);
 
-    gettimeofday(&current_time, NULL);
-    elapsed_time = (current_time.tv_sec - sim_start_date.tv_sec) * 1000 +
-                   (current_time.tv_usec - sim_start_date.tv_usec) / 1000;
-
+    updateTime(&current_time, &elapsed_time);
     if (outmode == 3)
         printf("%ld Process %d finished, running_process_count %d\n", elapsed_time, pid, running_process_count);
+    // final calculation of PCB DATA
+    my_pcb.finish_time= elapsed_time;
+    pcb_array[pid-1] = my_pcb;
     pthread_exit(NULL);
 }
 
@@ -636,16 +637,11 @@ int gen_burst_length()
 
 void mutex_queue_add(struct PCB pcb)
 {
-    printf("Process %d will get pcb_queue_mutex.\n", pcb.pid);
     // lock mutex
     pthread_mutex_lock(&pcb_queue_mutex);
     // add pcb to queue
-    
-    printf("Process %d will got pcb_queue_mutex.\n", pcb.pid);
     pcb_queue_insert(pcb);
     // unlock mutex
-    
-    printf("Process %d will relesed pcb_queue_mutex.\n", pcb.pid);
     pthread_mutex_unlock(&pcb_queue_mutex);
 };
 
