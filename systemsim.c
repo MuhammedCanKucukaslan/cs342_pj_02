@@ -575,7 +575,7 @@ int gen_burst_length()
         // first we need to generate a real number p from interval [0,1] whose x value we want to know
         // then we can use the inverse function of the exponential distribution to get the x value
         // lambda = burstlen
-        int x = -log(1 - rn) / burstlen;// if rn = 0, x = 0, if rn = 1, x = inf
+        float x = -log(1 - rn) / burstlen;// if rn = 0, x = 0, if rn = 1, x = inf
         // now we rescale the x value to the interval [min_burst, max_burst]
         return (int) (x * (max_burst - min_burst)) + min_burst;
         // so we need to convert it to [min_burst, max_burst]
@@ -658,7 +658,7 @@ int pcb_queue_dequeue()
 }
 float frandom()
 {
-    return (float) rand() / RAND_MAX;
+    return (float) random() / RAND_MAX;
 }
 
 char *getStateName(enum state s)
