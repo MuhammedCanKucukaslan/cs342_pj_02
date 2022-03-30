@@ -181,7 +181,7 @@ int main(int argc, char **argv)
 
 
     /* thread join */
-    sleep(400);
+    sleep(150);
     printf("MAIN ABOUT To Kill\n\n");
     pthread_cancel(gen_thread);
     pthread_detach(sched_thread);
@@ -337,6 +337,8 @@ void *p_sched(void *arg)
     // release queue so that process can add themselves to the queue
     // since running_process_count
     int isFirstTime = 1;
+    pthread_mutex_unlock(&pcb_queue_mutex);
+
     while (allp_count < ALLP || running_process_count > 0) {
         pthread_mutex_unlock(&running_process_count_mutex);
 
@@ -349,12 +351,12 @@ void *p_sched(void *arg)
                    "%d, io2 count: %d  \n",
                    elapsed_time, allp_count, running_process_count, ready_queue.count, io1_wait_count, io2_wait_count);
         }
-        while (ready_queue.count == 0) {
+        while (ready_queue.count == 0 || toBeRun_pid != -1) {
             pthread_mutex_unlock(&pcb_queue_mutex);
             if (isFirstTime == 1) {
                 isFirstTime = 0;
                 // todo
-                pthread_mutex_unlock(&pcb_queue_mutex);
+                //pthread_mutex_unlock(&pcb_queue_mutex);
             }
             pthread_cond_wait(&wakeup_sched, &cpu_mutex);
             pthread_mutex_lock(&pcb_queue_mutex);
@@ -563,6 +565,7 @@ void *process(void *arg)
         if (outmode == 3) {
             printf("%ld Process %d finished its burst.\n", elapsed_time, pid);
         }
+        pthread_cond_signal(&wakeup_sched);
         pthread_mutex_unlock(&cpu_mutex);
 
         // do io/term only RR is completely done with the burst or burst ended in other algorithm
