@@ -181,15 +181,10 @@ int main(int argc, char **argv)
 
 
     /* thread join */
-    sleep(150);
-    printf("MAIN ABOUT To Kill\n\n");
-    pthread_cancel(gen_thread);
+    pthread_join(gen_thread, NULL);
     pthread_detach(sched_thread);
     pthread_cancel(sched_thread);
-    printf("MAIN ABOUT To Killed\n\n");
-    int *a = NULL;
-    int bb = *a;
-    exit(-1);
+
     //pthread_join(gen_thread, NULL);
     //pthread_cancel(sched_thread);
 
