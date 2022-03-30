@@ -200,10 +200,10 @@ int main(int argc, char **argv)
     pthread_cond_destroy(&running_process_count_cond);
 
     struct PCB cur_pcb;
-    printf("%12s %12s %12s %12s %12s %12s %12s %12s %12s ","pid", "arv", "dept", "cpu", "waitr", "turna", "n-bursts", "n-d1", "n-d2");
+    printf("%12s, %12s, %12s, %12s, %12s, %12s, %12s, %12s, %12s\n","pid", "arv", "dept", "cpu", "waitr", "turna", "n-bursts", "n-d1", "n-d2");
     for(int i = 0; i < ALLP; i++) {
         cur_pcb = pcb_array[i];
-        printf("\n%12d %12d %12d %12d %12d %12d %12d %12d %12d", cur_pcb.pid, cur_pcb.start_time, cur_pcb.finish_time, cur_pcb.total_execution_time, cur_pcb.time_in_ready_list, cur_pcb.finish_time - cur_pcb.start_time, cur_pcb.num_bursts, cur_pcb.IO_device1, cur_pcb.IO_device2);
+        printf("%12d, %12d, %12d, %12d, %12d, %12d, %12d, %12d, %12d\n", cur_pcb.pid, cur_pcb.start_time, cur_pcb.finish_time, cur_pcb.total_execution_time, cur_pcb.time_in_ready_list, cur_pcb.finish_time - cur_pcb.start_time, cur_pcb.num_bursts, cur_pcb.IO_device1, cur_pcb.IO_device2);
     }
     free(pcb_array);
     return 0;
@@ -332,7 +332,7 @@ void *p_sched(void *arg)
         }
         // should be sure if queue has all initial elements
         pthread_mutex_lock(&wakeup_sched_mutex);
-        if( allp_count > MAXP) {
+        while( allp_count < MAXP && toBeRun_pid != -1 )  {
             updateTime(&current_time, &elapsed_time);
             if (outmode == 3) {
                 printf("%ld Scheduler begin if: allp_count: %d, running_process_count: %d, queue size: %d, io1 count: %d, io2 count: %d  \n", elapsed_time, allp_count,
