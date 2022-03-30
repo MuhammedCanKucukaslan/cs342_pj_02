@@ -9,7 +9,7 @@ tar:
 run:a
 	#     // <ALG> <Q> <T1> <T2> <burst-dist> <burstlen> <min-burst> <max-burst> <p0> <p1> <p2> <pg> <MAXP> <ALLP> <OUTMODE>
 
-	./systemsim FCFS INF 5 10 fixed 100 10 100 0.1 0.8 0.1 0.5 3 5 3
+	./systemsim FCFS INF 5 10 fixed 20 10 100 0.6 0.3 0.1 0.5 3 5 3
 	#./systemsim FCFS INF 5 10 fixed 100 10 100 0.8 0.1 0.1 0.1 5 10 0 
 
 tf: a
@@ -54,13 +54,13 @@ r: a
 f: a
 	./systemsim FCFS INF 5 10 fixed 10 10 100 0.3 0.3 0.4 0.5 10 100 3
 rr: a
-	./systemsim RR 10 10 20 fixed 30 10 100 0.3 0.4 0.4 0.9 10 1000 3
+	./systemsim RR 10 10 20 fixed 30 10 100 0.3 0.4 0.4 0.9 10 100 3
 s:  a
 	./systemsim SJF INF 10 20 fixed 20 10 100 0.3 0.4 0.4 0.9 13 100 3
 val: a
-	valgrind --leak-check=full --show-leak-kinds=all --leak-resolution=high --track-origins=yes --vgdb=yes ./systemsim FCFS INF 5 10 fixed 100 10 100 0.5 0.25 0.25 0.5 10 100 3
+	valgrind --leak-check=full --show-leak-kinds=all --leak-resolution=high --track-origins=yes --vgdb=yes ./systemsim FCFS INF 5 10 fixed 100 10 100 0.5 0.25 0.25 0.5 10 100 0
 hel: a
-	valgrind --tool=helgrind ./systemsim FCFS INF 5 10 fixed 100 10 100 0.1 0.8 0.1 0.5 3 5 3
+	valgrind --tool=helgrind ./systemsim FCFS INF 5 10 fixed 100 10 100 0.1 0.8 0.1 0.5 3 5 0
 
 hr: a
 	valgrind --tool=helgrind ./systemsim FCFS INF 5 10 fixed 10 10 100 0.3 0.3 0.4 0.5 30 1000 2
