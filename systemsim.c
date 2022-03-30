@@ -314,15 +314,33 @@ void *p_sched(void *arg)
     pthread_mutex_unlock(&create_pgen_mutex);
 
     // It is guaranteed for allp_count to be positive but better to be safe than stay awake 4 A.M.
-    while (running_process_count < 1 || allp_count < 1) {
+    while (running_process_count < 1 || allp_count < MAXP) {
+        updateTime(&current_time, &elapsed_time);
+        if (outmode == 3) {
+            printf("\n\n%ld Scheduler first while: allp_count: %d, running_process_count: %d, queue size: %d, io1 count: %d, io2 count: %d  \n\n", elapsed_time, allp_count,
+                running_process_count, ready_queue.count, io1_wait_count, io2_wait_count);
+        }
         pthread_cond_wait(&running_process_count_cond, &running_process_count_mutex);
     }
 
+     if (outmode == 3) {
+            printf("\n\n%ld Scheduler before queue: allp_count: %d, running_process_count: %d, queue size: %d, io1 count: %d, io2 count: %d  \n\n", elapsed_time, allp_count,
+                running_process_count, ready_queue.count, io1_wait_count, io2_wait_count);
+    }
     // release queue so that process can add themselves to the queue
     // since running_process_count
     pthread_mutex_unlock(&pcb_queue_mutex);
-
-    while (allp_count < ALLP || running_process_count > 0) {
+if (outmode == 3) {
+            printf("\n\n%ld Scheduler after queue: allp_count: %d, running_process_count: %d, queue size: %d, io1 count: %d, io2 count: %d  \n\n", elapsed_time, allp_count,
+                running_process_count, ready_queue.count, io1_wait_count, io2_wait_count);
+    }
+    pthread_mutex_lock(&wakeup_sched_mutex);
+    if (outmode == 3) {
+            printf("\n\n%ld Scheduler before do while: allp_count: %d, running_process_count: %d, queue size: %d, io1 count: %d, io2 count: %d  \n\n", elapsed_time, allp_count,
+                running_process_count, ready_queue.count, io1_wait_count, io2_wait_count);
+    }
+    do{
+        pthread_mutex_unlock(&wakeup_sched_mutex);
         pthread_mutex_unlock(&running_process_count_mutex);
 
         updateTime(&current_time, &elapsed_time);
@@ -331,20 +349,13 @@ void *p_sched(void *arg)
                    running_process_count, ready_queue.count, io1_wait_count, io2_wait_count);
         }
         // should be sure if queue has all initial elements
-        pthread_mutex_lock(&wakeup_sched_mutex);
-        while( allp_count < MAXP && toBeRun_pid != -1 )  {
-            updateTime(&current_time, &elapsed_time);
-            if (outmode == 3) {
-                printf("%ld Scheduler begin if: allp_count: %d, running_process_count: %d, queue size: %d, io1 count: %d, io2 count: %d  \n", elapsed_time, allp_count,
-                    running_process_count, ready_queue.count, io1_wait_count, io2_wait_count);
-            }
-            pthread_cond_wait(&wakeup_sched, &wakeup_sched_mutex);
-        }
+        
         updateTime(&current_time, &elapsed_time);
         if (outmode == 3) {
             printf("%ld Scheduler before if: allp_count: %d, running_process_count: %d, queue size: %d, io1 count: %d, io2 count: %d , toBeRun_pid: %d \n", elapsed_time, allp_count,
                    running_process_count, ready_queue.count, io1_wait_count, io2_wait_count, toBeRun_pid);
         }
+
         // try lock cpu_mutex i.e. check if need to schedule
         if (toBeRun_pid == -1 && pthread_mutex_trylock(&cpu_mutex) == 0) {
             updateTime(&current_time, &elapsed_time);
@@ -398,9 +409,17 @@ void *p_sched(void *arg)
             printf("%ld Scheduler after if: allp_count: %d, running_process_count: %d, toberun: %d\n", elapsed_time,
                    allp_count, running_process_count, toBeRun_pid);
         }
-        pthread_mutex_unlock(&wakeup_sched_mutex);
+
+        pthread_mutex_lock(&wakeup_sched_mutex);
+        updateTime(&current_time, &elapsed_time);
+        if (outmode == 3) {
+            printf("\n\n%ld Scheduler begin if: allp_count: %d, running_process_count: %d, queue size: %d, io1 count: %d, io2 count: %d  \n\n", elapsed_time, allp_count,
+                running_process_count, ready_queue.count, io1_wait_count, io2_wait_count);
+        }
+        pthread_cond_wait(&wakeup_sched, &wakeup_sched_mutex);
+        
         pthread_mutex_lock(&running_process_count_mutex);
-    }// end of while
+    }  while (allp_count < ALLP || running_process_count > 0);// end of while
     pthread_mutex_unlock(&running_process_count_mutex);
 
 
