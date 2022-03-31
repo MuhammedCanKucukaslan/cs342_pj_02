@@ -177,8 +177,9 @@ int main(int argc, char **argv)
     
     /* thread join */
     pthread_join(gen_thread, NULL);
-    pthread_detach(sched_thread);
-    pthread_cancel(sched_thread);
+    pthread_join(sched_thread, NULL);
+    //pthread_detach(sched_thread);
+    //pthread_cancel(sched_thread);
 
 
     // destroy them (mutexes) all!
@@ -200,10 +201,10 @@ int main(int argc, char **argv)
     pthread_cond_destroy(&running_process_count_cond);
 
     struct PCB cur_pcb;
-    printf("%12s, %12s, %12s, %12s, %12s, %12s, %12s, %12s, %12s\n","pid", "arv", "dept", "cpu", "waitr", "turna", "n-bursts", "n-d1", "n-d2");
+    printf("%12s %12s %12s %12s %12s %12s %12s %12s %12s\n","pid", "arv", "dept", "cpu", "waitr", "turna", "n-bursts", "n-d1", "n-d2");
     for(int i = 0; i < ALLP; i++) {
         cur_pcb = pcb_array[i];
-        printf("%12d, %12d, %12d, %12d, %12d, %12d, %12d, %12d, %12d\n", cur_pcb.pid, cur_pcb.start_time, cur_pcb.finish_time, cur_pcb.total_execution_time, cur_pcb.time_in_ready_list, cur_pcb.finish_time - cur_pcb.start_time, cur_pcb.num_bursts, cur_pcb.IO_device1, cur_pcb.IO_device2);
+        printf("%12d %12d %12d %12d %12d %12d %12d %12d %12d\n", cur_pcb.pid, cur_pcb.start_time, cur_pcb.finish_time, cur_pcb.total_execution_time, cur_pcb.time_in_ready_list, cur_pcb.finish_time - cur_pcb.start_time, cur_pcb.num_bursts, cur_pcb.IO_device1, cur_pcb.IO_device2);
     }
     free(pcb_array);
     return 0;
@@ -264,18 +265,8 @@ void *p_gen(void *arg)
         }
     }
     pthread_mutex_unlock(&running_process_count_mutex);
-    if (outmode == 0)
-        printf("Generator thread exited allp_count\n");
-
-    // TODO replace with thread_join
-    // It is guaranteed that all processes are created and included in running_process_count
-    // So we can safely assume that all processes are finished if the running_process_count is 0
-    /*
-    while (running_process_count > 0) {
-        usleep(1000);
-        //printf("Generator waits running_process_count to reduce to zero from %d\n", running_process_count);
-    }
-    */
+    
+    
     for (int i = 0; i < thread_count; i++) {
         pthread_join(created_threads[i], NULL);
     }
