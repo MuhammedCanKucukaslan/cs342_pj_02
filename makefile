@@ -4,7 +4,7 @@ a:
 all: a
 
 tar:
-	tar czf 21901779.tar.gz systemsim.c makefile readme.txt shared.h report.pdf --ignore-failed-read
+	tar czf ../21901779.tar.gz systemsim.c makefile readme.txt shared.h report.pdf --ignore-failed-read
 
 run:a
 	#     // <ALG> <Q> <T1> <T2> <burst-dist> <burstlen> <min-burst> <max-burst> <p0> <p1> <p2> <pg> <MAXP> <ALLP> <OUTMODE>
